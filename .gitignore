@@ -1,0 +1,13 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Logs / temporários
+*.log
+tmp/
+scratch/
+
+# Dependências de tooling (o app não usa build; libs/ é versionado de propósito)
+node_modules/
