@@ -4,7 +4,7 @@
    - libs e ícones locais: cache-first (imutáveis).
    - Origens externas (tiles do mapa, nominatim, wa.me): passam direto, sem cache.
    Suba o número da versão (CACHE) ao publicar mudanças nas libs/shell. */
-const CACHE = 'ci-shell-v2';
+const CACHE = 'ci-shell-v3';
 const SHELL = [
   './',
   './index.html',
@@ -40,6 +40,8 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return; // deixa CDN/tiles/wa.me/nominatim passarem
+  // backend (contas/backup/cardápio) e páginas públicas de loja: sempre rede, nunca cache
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/loja/')) return;
 
   const isHTML = req.mode === 'navigate' || (req.headers.get('accept') || '').includes('text/html');
 

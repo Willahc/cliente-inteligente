@@ -1031,6 +1031,11 @@ textarea.fi{resize:vertical;min-height:68px}
           <input type="file" id="restore-file" accept="application/json,.json" style="display:none" onchange="restaurarBackup(this.files[0]);this.value='';">
         </div>
       </div>
+      <div style="border:.5px solid var(--g4);border-radius:8px;padding:11px 13px;margin-top:8px">
+        <div style="font-size:13px;font-weight:500;margin-bottom:3px">☁️ Conta na nuvem <span style="font-size:10px;color:var(--g2)">(opcional)</span></div>
+        <div style="font-size:11px;color:var(--g2);margin-bottom:9px">Crie uma conta pra <b>publicar seu cardápio na internet</b> e guardar <b>backup cifrado na nuvem</b>. Os dados sobem criptografados — só você abre.</div>
+        <div id="conta-area"></div>
+      </div>
       <div class="mo-ft" style="justify-content:space-between"><button class="btn btn-danger btn-sm" onclick="limparDados()">🗑 Apagar tudo</button><div style="display:flex;gap:8px"><button class="btn btn-g" onclick="closeModal('modal-config')">Fechar</button><button class="btn btn-p" onclick="salvarConfig()">Salvar</button></div></div>
     </div>
     <div id="cfg-painel-usuarios" style="display:none">
@@ -1089,6 +1094,7 @@ const N = {
   transacoes:[], pedidos:[], avaliacoes:[],
   limiar:30, endNivel:'simples', diasAlertaVal:30, googleReviewUrl:'',
   cartao:{ ativo:false, meta:10, premio:'' },
+  conta:null,
   pontos:{ ativo:false, razao:10, validade:90, minResgate:50 },
   vendas:{ jan:0, fev:0, mar:0, abr:0, mai:0, jun:0 }
 };
@@ -1241,6 +1247,7 @@ function _backupPayload(){
   const payload = { ...N, _counts:{
     clientes:(N.clientes||[]).length, produtos:(N.produtos||[]).length,
     transacoes:(N.transacoes||[]).length, avaliacoes:(N.avaliacoes||[]).length } };
+  delete payload.conta; // não exporta token/chave da conta no arquivo
   const nomeSeg = (N.nome||'negocio').replace(/[^\w\-]+/g,'_').replace(/^_+|_+$/g,'')||'negocio';
   return { json: JSON.stringify(payload, null, 2),
            filename: `backup_cliente_inteligente_${nomeSeg}_${new Date().toISOString().slice(0,10)}.json` };
@@ -1298,6 +1305,126 @@ function checkBackupStale(){
   if(!temDados) return;
   const dias = N._lastBackup ? Math.floor((Date.now()-new Date(N._lastBackup).getTime())/86400000) : 999;
   if(dias>=7) setTimeout(()=>showToast('💾 Faça backup: Configurações › Cópia de segurança › Enviar','aviso'), 1800);
+}
+
+// ── CONTA NA NUVEM / BACKUP CIFRADO / PUBLICAR CARDÁPIO (Fase 2) ──
+// Cifragem AES-GCM no cliente (WebCrypto); o servidor guarda bytes opacos.
+function _ab2b64(buf){ let s='',b=new Uint8Array(buf); for(let i=0;i<b.length;i++) s+=String.fromCharCode(b[i]); return btoa(s); }
+function _b642ab(b64){ return Uint8Array.from(atob(b64), c=>c.charCodeAt(0)); }
+async function _deriveKeyB64(senha, saltHex){
+  const km=await crypto.subtle.importKey('raw', new TextEncoder().encode(senha), 'PBKDF2', false, ['deriveKey']);
+  const salt=Uint8Array.from(saltHex.match(/.{2}/g).map(h=>parseInt(h,16)));
+  const key=await crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:120000,hash:'SHA-256'}, km, {name:'AES-GCM',length:256}, true, ['encrypt','decrypt']);
+  return _ab2b64(await crypto.subtle.exportKey('raw', key));
+}
+async function _key(keyB64){ return crypto.subtle.importKey('raw', _b642ab(keyB64), {name:'AES-GCM'}, false, ['encrypt','decrypt']); }
+async function _encryptBlob(keyB64, obj){
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv}, await _key(keyB64), new TextEncoder().encode(JSON.stringify(obj)));
+  return _ab2b64(iv)+':'+_ab2b64(ct);
+}
+async function _decryptBlob(keyB64, blob){
+  const [ivb,ctb]=blob.split(':');
+  const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:_b642ab(ivb)}, await _key(keyB64), _b642ab(ctb));
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+async function _api(path, method, body, token){
+  const h={}; if(token) h['x-token']=token;
+  if(body && typeof body==='object'){ h['Content-Type']='application/json'; body=JSON.stringify(body); }
+  const r=await fetch('/api'+path, {method, headers:h, body});
+  const txt=await r.text(); let data; try{ data=JSON.parse(txt); }catch(_){ data=txt; }
+  if(!r.ok) throw new Error((data&&data.detail)||('erro '+r.status));
+  return data;
+}
+function _v(id){ return (document.getElementById(id)?.value||'').trim(); }
+async function contaRegistrar(){
+  const fone=_v('conta-fone'), senha=_v('conta-senha'), slug=_v('conta-slug');
+  if(!fone||!senha||!slug){ showToast('Preencha telefone, senha e endereço.','aviso'); return; }
+  try{
+    const res=await _api('/register','POST',{fone,senha,slug});
+    N.conta={token:res.token, slug:res.slug, salt:res.salt, fone:fone.replace(/\D/g,''), keyB64:await _deriveKeyB64(senha,res.salt), publicado:false};
+    salvarDados(); renderConta(); showToast('Conta criada! Já dá pra publicar o cardápio e salvar na nuvem.');
+  }catch(e){ showToast(e.message,'erro'); }
+}
+async function contaLogin(){
+  const fone=_v('conta-fone'), senha=_v('conta-senha');
+  if(!fone||!senha){ showToast('Preencha telefone e senha.','aviso'); return; }
+  try{
+    const res=await _api('/login','POST',{fone,senha});
+    N.conta={token:res.token, slug:res.slug, salt:res.salt, fone:fone.replace(/\D/g,''), keyB64:await _deriveKeyB64(senha,res.salt), publicado:false};
+    try{ const me=await _api('/me','GET',null,res.token); N.conta.publicado=!!me.publicado; }catch(_){}
+    salvarDados(); renderConta(); showToast('Conectado à sua conta na nuvem.');
+  }catch(e){ showToast(e.message,'erro'); }
+}
+function contaSair(){ N.conta=null; salvarDados(); renderConta(); showToast('Saiu da conta na nuvem (dados locais intactos).'); }
+async function backupNuvem(){
+  if(!N.conta){ showToast('Entre na sua conta na nuvem primeiro.','aviso'); return; }
+  try{
+    const dados={...N}; delete dados.conta;
+    const blob=await _encryptBlob(N.conta.keyB64, dados);
+    await _api('/backup','PUT', blob, N.conta.token);
+    marcarBackup(); showToast('☁️ Backup salvo na nuvem (cifrado).');
+  }catch(e){ showToast('Falha no backup na nuvem: '+e.message,'erro'); }
+}
+async function restaurarNuvem(){
+  if(!N.conta){ showToast('Entre na sua conta na nuvem primeiro.','aviso'); return; }
+  if(!confirm('Restaurar da nuvem SUBSTITUI os dados deste aparelho. Continuar?')) return;
+  try{
+    const blob=await _api('/backup','GET', null, N.conta.token);
+    const dados=await _decryptBlob(N.conta.keyB64, blob);
+    dados.conta=N.conta; dados._saved=new Date().toISOString();
+    const db=_getDB(); if(db) await db.kv.put({k:IDB_KEY, v:dados});
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(dados)); }catch(_){}
+    showToast('Restaurado da nuvem! Recarregando…'); setTimeout(()=>location.reload(),900);
+  }catch(e){ showToast('Falha ao restaurar: '+e.message,'erro'); }
+}
+function _gerarCardapioHTML(){
+  const loja=N.nome||'Minha loja';
+  const num=(N.wpp||'').replace(/\D/g,''); const num55=num?(num.startsWith('55')?num:'55'+num):'';
+  const wa=num55?`https://wa.me/${num55}?text=${encodeURIComponent('Olá! Quero fazer um pedido na '+loja+':')}`:'';
+  const prods=(N.produtos||[]).filter(p=>p.nome);
+  const itens=prods.map(p=>`<div class="i"><span>${esc(p.nome)}</span><b>R$ ${esc(String(p.preco||'').replace('.',','))}</b></div>`).join('')||'<div class="i"><span>Cardápio em breve</span></div>';
+  const botao=wa?`<a class="wa" href="${esc(wa)}">📲 Fazer pedido no WhatsApp</a>`:'<div class="sem">Configure seu WhatsApp no app para receber pedidos.</div>';
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(loja)}</title><style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f1f5f9;color:#0f172a}
+.wrap{max-width:520px;margin:0 auto;padding:18px}
+.hd{text-align:center;padding:22px 14px;background:#1D9E75;color:#fff;border-radius:0 0 16px 16px}
+.hd h1{margin:0;font-size:22px}.hd p{margin:4px 0 0;font-size:13px;opacity:.9}
+.card{background:#fff;border-radius:12px;padding:6px 14px;margin:14px 0;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.i{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid #eef2f6;font-size:15px}.i:last-child{border-bottom:none}.i b{color:#1D9E75}
+.wa{display:block;text-align:center;background:#22c55e;color:#fff;text-decoration:none;font-weight:700;padding:14px;border-radius:12px;font-size:16px;margin:14px 0}
+.sem{text-align:center;color:#64748b;font-size:13px;padding:12px}
+.ft{text-align:center;color:#94a3b8;font-size:11px;padding:14px}
+</style></head><body><div class="hd"><h1>${esc(loja)}</h1><p>Cardápio online</p></div>
+<div class="wrap"><div class="card">${itens}</div>${botao}<div class="ft">Feito com Cliente Inteligente</div></div></body></html>`;
+}
+async function publicarCardapio(){
+  if(!N.conta){ showToast('Entre na conta na nuvem primeiro.','aviso'); return; }
+  try{
+    const res=await _api('/loja','PUT', _gerarCardapioHTML(), N.conta.token);
+    N.conta.publicado=true; salvarDados(); renderConta();
+    showToast('🌐 Cardápio publicado!');
+  }catch(e){ showToast('Falha ao publicar: '+e.message,'erro'); }
+}
+function renderConta(){
+  const el=document.getElementById('conta-area'); if(!el) return;
+  if(!N.conta){
+    el.innerHTML=`
+      <div class="fg"><div class="fl"><label>WhatsApp (login)</label><input class="fi" id="conta-fone" placeholder="(11) 99999-9999"></div><div class="fl"><label>Senha</label><input class="fi" type="password" id="conta-senha"></div></div>
+      <div class="fl"><label>Endereço da loja <span style="color:var(--g2)">(só p/ criar)</span></label><input class="fi" id="conta-slug" placeholder="ex.: padaria-do-joao"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="contaRegistrar()">Criar conta</button><button class="btn btn-g btn-sm" onclick="contaLogin()">Já tenho conta</button></div>`;
+  } else {
+    const url=location.origin+'/loja/'+N.conta.slug+'/';
+    el.innerHTML=`
+      <div style="font-size:12px;margin-bottom:9px">✅ Conectado · loja <b>${esc(N.conta.slug)}</b></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        <button class="btn btn-p btn-sm" onclick="publicarCardapio()">🌐 Publicar cardápio</button>
+        <button class="btn btn-g btn-sm" onclick="backupNuvem()">☁️ Backup na nuvem</button>
+        <button class="btn btn-g btn-sm" onclick="restaurarNuvem()">⬇️ Restaurar da nuvem</button>
+        <button class="btn btn-g btn-sm" onclick="contaSair()">Sair</button>
+      </div>
+      <div style="font-size:11px;color:var(--g2)">Cardápio: ${N.conta.publicado?`<a href="${esc(url)}" target="_blank">${esc(url)}</a>`:'ainda não publicado'}</div>`;
+  }
 }
 
 function restaurarBackup(file) {
@@ -1602,7 +1729,7 @@ function showModal(id) {
   if(id==='modal-pedido') {
     initModalPedido();
   }
-  if(id==='modal-config') atualizarStatusBackup();
+  if(id==='modal-config'){ atualizarStatusBackup(); renderConta(); }
   const m=document.getElementById(id);
   if(m) m.classList.add('open');
 }
