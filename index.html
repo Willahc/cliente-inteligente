@@ -799,6 +799,37 @@ textarea.fi{resize:vertical;min-height:68px}
         </div>
       </div>
 
+      <!-- REPUTAÇÃO -->
+      <div class="screen" id="screen-reputacao">
+        <div class="g4g">
+          <div class="met"><div class="met-lb">NPS</div><div class="met-vl v" id="rep-nps">—</div></div>
+          <div class="met"><div class="met-lb">Avaliações</div><div class="met-vl" id="rep-total">0</div></div>
+          <div class="met"><div class="met-lb">Promotores</div><div class="met-vl v" id="rep-promo">0%</div></div>
+          <div class="met"><div class="met-lb">Detratores</div><div class="met-vl a" id="rep-detr">0%</div></div>
+        </div>
+        <div class="g2" style="margin-bottom:14px">
+          <div class="card">
+            <div class="card-hd"><div class="card-tt">📝 Registrar avaliação (balcão)</div></div>
+            <div class="fl"><label>Como foi o atendimento? (0 a 10)</label><div id="rep-nota-btns" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px"></div></div>
+            <div class="fl"><label>Cliente (opcional)</label><select class="fi" id="rep-cliente"><option value="">— anônimo —</option></select></div>
+            <div class="fl"><label>Comentário (opcional)</label><textarea class="fi" id="rep-coment" rows="2" placeholder="O que o cliente achou?"></textarea></div>
+            <button class="btn btn-p btn-sm" onclick="registrarAvaliacao()">Registrar avaliação</button>
+          </div>
+          <div class="card">
+            <div class="card-hd"><div class="card-tt">Distribuição</div></div>
+            <div id="rep-dist"></div>
+            <div class="card-hd" style="margin-top:16px"><div class="card-tt">⭐ Avaliação no Google</div></div>
+            <div class="fl"><label>Seu link de avaliação do Google</label><input class="fi" id="rep-google" placeholder="https://g.page/r/... ou search.google.com/local/writereview?placeid=..."></div>
+            <button class="btn btn-g btn-sm" onclick="salvarConfigReputacao()">Salvar link</button>
+            <div style="font-size:12px;color:#64748b;margin-top:8px;line-height:1.4">Promotores (9-10) recebem este link por WhatsApp para avaliar no Google. Detratores (0-6) são recuperados internamente <b>antes</b> de virar uma nota baixa pública.</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><div class="card-tt">Feedback recente</div></div>
+          <div id="rep-lista"></div>
+        </div>
+      </div>
+
       <!-- PREDITIVA -->
       <div class="screen" id="screen-preditiva">
         <div class="g2">
@@ -1021,8 +1052,8 @@ const N = {
   nome:'', seg:'', ico:'', wpp:'', cidade:'', lat:null, lng:null,
   produtos:[], clientes:[], estoque:[], enderecos:[],
   obrigacoes:[], fornecedores:[], funcionarios:[],
-  transacoes:[], pedidos:[],
-  limiar:30, endNivel:'simples', diasAlertaVal:30,
+  transacoes:[], pedidos:[], avaliacoes:[],
+  limiar:30, endNivel:'simples', diasAlertaVal:30, googleReviewUrl:'',
   pontos:{ ativo:false, razao:10, validade:90, minResgate:50 },
   vendas:{ jan:0, fev:0, mar:0, abr:0, mai:0, jun:0 }
 };
@@ -1105,7 +1136,7 @@ function salvarDados() {
 function _aplicarDados(dados){
   Object.assign(N, dados);
   ['produtos','clientes','estoque','enderecos','obrigacoes',
-   'fornecedores','funcionarios','transacoes','pedidos'].forEach(k=>{
+   'fornecedores','funcionarios','transacoes','pedidos','avaliacoes'].forEach(k=>{
     if(!Array.isArray(N[k])) N[k]=[];
   });
   if(!N.lat) N.lat=null;
@@ -1227,7 +1258,7 @@ const titulosMap = {
   preditiva:'Análise preditiva', relatorios:'Relatórios',
   caixa:'Fluxo de caixa', fornecedores:'Fornecedores',
   pessoas:'Equipe', pontos:'Programa de pontos',
-  precificacao:'Precificação'
+  precificacao:'Precificação', reputacao:'Reputação'
 };
 
 function go(id, el) {
@@ -1246,9 +1277,119 @@ function go(id, el) {
     delivery: renderDelivery, preditiva: renderPreditiva,
     relatorios: renderRelatorios, caixa: renderCaixa,
     fornecedores: renderFornecedores, pessoas: renderPessoas,
-    pontos: renderPontos, precificacao: renderPrecificacao
+    pontos: renderPontos, precificacao: renderPrecificacao,
+    reputacao: renderReputacao
   };
   if(renders[id]) renders[id]();
+}
+
+// ── REPUTAÇÃO / NPS ────────────────────────────────────────────
+// Offline-first: avaliações ficam em N.avaliacoes. Funil: promotor (9-10) →
+// pedir avaliação no Google via WhatsApp; detrator (0-6) → recuperar internamente
+// antes de virar nota baixa pública. Sem backend, sem dependência nova.
+let _repNota = null;
+function _repTier(n){ return n>=9 ? 'promotor' : (n>=7 ? 'neutro' : 'detrator'); }
+function _repCor(n){ return n>=9 ? '#1D9E75' : (n>=7 ? '#BA7517' : '#D1495B'); }
+function _repStats(avs){
+  const t=avs.length, p=avs.filter(a=>a.nota>=9).length, d=avs.filter(a=>a.nota<=6).length;
+  return { t, p, d, n:t-p-d, nps: t ? Math.round((p-d)/t*100) : null };
+}
+function renderReputacao(){
+  const avs = N.avaliacoes || [];
+  const s = _repStats(avs);
+  document.getElementById('rep-nps').textContent   = s.nps===null ? '—' : s.nps;
+  document.getElementById('rep-total').textContent = s.t;
+  document.getElementById('rep-promo').textContent = s.t ? Math.round(s.p/s.t*100)+'%' : '0%';
+  document.getElementById('rep-detr').textContent  = s.t ? Math.round(s.d/s.t*100)+'%' : '0%';
+  // botões 0-10 (monta uma vez)
+  const bt = document.getElementById('rep-nota-btns');
+  if(bt && !bt.dataset.built){
+    bt.dataset.built = '1';
+    bt.innerHTML = Array.from({length:11}, (_,i)=>`<button type="button" class="btn btn-g btn-sm" data-nota="${i}" style="min-width:36px;padding:7px 0" onclick="_repPick(${i},this)">${i}</button>`).join('');
+  }
+  // select de clientes
+  const sel = document.getElementById('rep-cliente');
+  if(sel) sel.innerHTML = '<option value="">— anônimo —</option>' +
+    (N.clientes||[]).map(c=>`<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join('');
+  // link do Google
+  const g = document.getElementById('rep-google'); if(g) g.value = N.googleReviewUrl || '';
+  // distribuição (barras)
+  const bar = (lbl,val,cor)=>{ const pct=s.t?Math.round(val/s.t*100):0;
+    return `<div style="margin:9px 0"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px"><span>${lbl}</span><span>${val} (${pct}%)</span></div><div style="height:9px;background:#e2e8f0;border-radius:5px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${cor}"></div></div></div>`; };
+  document.getElementById('rep-dist').innerHTML =
+    bar('😀 Promotores (9-10)', s.p, '#1D9E75') +
+    bar('😐 Neutros (7-8)',     s.n, '#BA7517') +
+    bar('🙁 Detratores (0-6)',  s.d, '#D1495B');
+  renderRepLista();
+}
+function _repPick(n, el){
+  _repNota = n;
+  document.querySelectorAll('#rep-nota-btns .btn').forEach(b=>{ b.classList.remove('btn-p'); b.classList.add('btn-g'); });
+  el.classList.remove('btn-g'); el.classList.add('btn-p');
+}
+function registrarAvaliacao(){
+  if(_repNota===null){ showToast('Escolha uma nota de 0 a 10','aviso'); return; }
+  const cliId = document.getElementById('rep-cliente').value;
+  const cli = (N.clientes||[]).find(c=>c.id===cliId);
+  const av = { id:uid(), data:new Date().toISOString(), nota:_repNota,
+    comentario:document.getElementById('rep-coment').value.trim(),
+    clienteId:cliId||null, clienteNome: cli?cli.nome:'', canal:'balcao' };
+  (N.avaliacoes = N.avaliacoes || []).unshift(av);
+  salvarDados();
+  const tier = _repTier(av.nota);
+  // limpa o formulário
+  document.getElementById('rep-coment').value='';
+  document.getElementById('rep-cliente').value='';
+  _repNota=null;
+  document.querySelectorAll('#rep-nota-btns .btn').forEach(b=>{ b.classList.remove('btn-p'); b.classList.add('btn-g'); });
+  renderReputacao();
+  // funil
+  if(tier==='promotor'){
+    showToast('😀 Promotor! Peça a avaliação no Google.','ok');
+    if(cli && cli.wpp) pedirAvaliacaoGoogle(av.id);
+  } else if(tier==='detrator'){
+    showToast('🙁 Registrado internamente. Recupere este cliente.','aviso');
+    if(cli && cli.wpp) recuperarCliente(av.id);
+  } else showToast('Avaliação registrada.','ok');
+}
+function repGoogleUrl(){
+  const u=(N.googleReviewUrl||'').trim();
+  return u || ('https://www.google.com/search?q='+encodeURIComponent(((N.nome||'')+' '+(N.cidade||'')).trim()+' avaliações'));
+}
+function pedirAvaliacaoGoogle(avId){
+  const av=(N.avaliacoes||[]).find(a=>a.id===avId); if(!av) return;
+  const cli=(N.clientes||[]).find(c=>c.id===av.clienteId);
+  if(!cli || !cli.wpp){ showToast('Cliente sem WhatsApp. Link do Google: '+repGoogleUrl(),'aviso'); return; }
+  const nome = cli.nome.split(' ')[0];
+  const msg = `Oi ${nome}! 😊 Que bom te atender na ${N.nome||'nossa loja'}. Se puder, deixe sua avaliação aqui — leva 30 segundos e ajuda muito: ${repGoogleUrl()}`;
+  showWpp(cli.nome, msg);
+}
+function recuperarCliente(avId){
+  const av=(N.avaliacoes||[]).find(a=>a.id===avId); if(!av) return;
+  const cli=(N.clientes||[]).find(c=>c.id===av.clienteId);
+  if(!cli || !cli.wpp){ showToast('Cliente sem WhatsApp cadastrado.','aviso'); return; }
+  const nome = cli.nome.split(' ')[0];
+  const msg = `Oi ${nome}, vi que sua experiência na ${N.nome||'nossa loja'} não foi a melhor e quero resolver isso. Pode me contar o que aconteceu? Sua opinião é muito importante pra gente. 🙏`;
+  showWpp(cli.nome, msg);
+}
+function salvarConfigReputacao(){
+  N.googleReviewUrl = document.getElementById('rep-google').value.trim();
+  salvarDados();
+  showToast('Link de avaliação salvo.','ok');
+}
+function renderRepLista(){
+  const el=document.getElementById('rep-lista'); if(!el) return;
+  const avs=(N.avaliacoes||[]).slice(0,30);
+  if(!avs.length){ el.innerHTML='<div style="padding:18px;color:#64748b">Nenhuma avaliação ainda. Registre a primeira no balcão — pergunte ao cliente de 0 a 10 quanto recomendaria sua loja.</div>'; return; }
+  el.innerHTML='<table class="tbl"><thead><tr><th>Data</th><th>Nota</th><th>Cliente</th><th>Comentário</th><th></th></tr></thead><tbody>'+
+    avs.map(a=>{
+      const data=new Date(a.data).toLocaleDateString('pt-BR');
+      const tier=_repTier(a.nota);
+      const acao = tier==='detrator'
+        ? `<button class="btn btn-g btn-sm" onclick="recuperarCliente('${escJs(a.id)}')">Recuperar</button>`
+        : (tier==='promotor' ? `<button class="btn btn-g btn-sm" onclick="pedirAvaliacaoGoogle('${escJs(a.id)}')">Pedir avaliação</button>` : '');
+      return `<tr><td>${data}</td><td><span style="font-weight:700;color:${_repCor(a.nota)}">${a.nota}</span></td><td>${esc(a.clienteNome||'—')}</td><td>${esc(a.comentario||'')}</td><td>${acao}</td></tr>`;
+    }).join('')+'</tbody></table>';
 }
 
 // ── MODAIS ─────────────────────────────────────────────────────
@@ -1713,12 +1854,12 @@ const PERFIS = {
     bg: '#E1F5EE',
     telas: ['dashboard','alertas','pdv','clientes','estoque','delivery',
             'caixa','fornecedores','precificacao','pessoas','pontos',
-            'preditiva','relatorios'],
+            'preditiva','relatorios','reputacao'],
     sidebar: [
       { label:'Início',     items:[{id:'dashboard',ico:'📊',label:'Dashboard'},{id:'alertas',ico:'🔔',label:'Alertas',badge:'badge-alertas'}] },
       { label:'Compras',    items:[{id:'fornecedores',ico:'🤝',label:'Fornecedores'},{id:'precificacao',ico:'🏷️',label:'Precificação'}] },
       { label:'Estoque',    items:[{id:'estoque',ico:'📦',label:'Estoque',badge:'badge-estoque'}] },
-      { label:'Vendas',     items:[{id:'pdv',ico:'🛒',label:'Registrar venda'},{id:'delivery',ico:'🏍️',label:'Delivery',badge:'badge-delivery'},{id:'clientes',ico:'👥',label:'Clientes'},{id:'pontos',ico:'⭐',label:'Pontos & Fidelidade'}] },
+      { label:'Vendas',     items:[{id:'pdv',ico:'🛒',label:'Registrar venda'},{id:'delivery',ico:'🏍️',label:'Delivery',badge:'badge-delivery'},{id:'clientes',ico:'👥',label:'Clientes'},{id:'pontos',ico:'⭐',label:'Pontos & Fidelidade'},{id:'reputacao',ico:'🌟',label:'Reputação'}] },
       { label:'Financeiro', items:[{id:'caixa',ico:'💰',label:'Fluxo de caixa',badge:'badge-caixa'},{id:'pessoas',ico:'👨‍💼',label:'Equipe'}] },
       { label:'Inteligência',items:[{id:'preditiva',ico:'🧠',label:'Análise preditiva'},{id:'relatorios',ico:'📈',label:'Relatórios'}] },
     ]
@@ -1728,13 +1869,14 @@ const PERFIS = {
     ico: '🛒',
     cor: '#BA7517',
     bg: '#FAEEDA',
-    telas: ['pdv','clientes','delivery','pontos','alertas'],
+    telas: ['pdv','clientes','delivery','pontos','alertas','reputacao'],
     sidebar: [
       { label:'Vendas', items:[
         {id:'pdv',ico:'🛒',label:'Registrar venda'},
         {id:'delivery',ico:'🏍️',label:'Delivery',badge:'badge-delivery'},
         {id:'clientes',ico:'👥',label:'Clientes'},
         {id:'pontos',ico:'⭐',label:'Pontos & Fidelidade'},
+        {id:'reputacao',ico:'🌟',label:'Reputação'},
         {id:'alertas',ico:'🔔',label:'Alertas',badge:'badge-alertas'},
       ]}
     ]
