@@ -3556,6 +3556,10 @@ function renderDelivery(){
 function renderMapaDelivery(pedidos){
   const el=document.getElementById('mapa-delivery');
   if(!el) return;
+  // Não inicializa com a tela escondida (container 0x0 quebra o Leaflet — tiles
+  // cinzas/desalinhados). Só renderiza quando o Delivery está visível; isso
+  // também mantém o Leaflet carregando sob demanda (lazy), não no boot.
+  if(el.offsetParent===null) return;
   if(!window.L){ ensureLeaflet().then(()=>renderMapaDelivery(pedidos)).catch(()=>{}); return; }
   // Usa coordenadas do negócio — geocodificadas no onboarding ou padrão SP
   const centro = N.lat && N.lng ? [N.lat, N.lng] : [-23.5505, -46.6333];
@@ -3579,12 +3583,11 @@ function renderMapaDelivery(pedidos){
     L.marker([p.lat,p.lng],{icon:ico}).addTo(mapaDelivery)
       .bindPopup(`<b>${esc(p.cliente)}</b><br>${esc(p.end)}<br>${fmt(p.valor)}<br><span style="color:${cor}">${p.status==='rt'?'Em rota':'Aguardando'}</span>`);
   });
-  // Aviso se pedidos sem geocodificação
-  const semGeo=pedidos.filter(p=>p.status!=='ok'&&!p.lat).length;
-  if(semGeo&&!ativos.length){
-    el.style.display='flex'; el.style.alignItems='center'; el.style.justifyContent='center';
-    el.innerHTML='<div style="font-size:12px;color:#5F5E5A;text-align:center;padding:20px">Geocodificando endereços...<br>Reabra em alguns segundos.</div>';
-  }
+  // Recalcula o tamanho agora que o container está visível — corrige os tiles
+  // cinzas/desalinhados (ex.: ao navegar pro Delivery ou fechar o drawer).
+  // (NÃO sobrescrevemos o innerHTML do container: isso destruiria o mapa Leaflet.)
+  requestAnimationFrame(()=>{ try{ mapaDelivery.invalidateSize(); }catch(e){} });
+  setTimeout(()=>{ try{ mapaDelivery.invalidateSize(); }catch(e){} }, 250);
 }
 
 // ── jsPDF — EXPORTAR DRE ───────────────────────────────────────
