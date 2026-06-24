@@ -1423,6 +1423,25 @@ function recuperarCliente(avId){
   const msg = `Oi ${nome}, vi que sua experiência na ${N.nome||'nossa loja'} não foi a melhor e quero resolver isso. Pode me contar o que aconteceu? Sua opinião é muito importante pra gente. 🙏`;
   showWpp(cli.nome, msg);
 }
+// Pós-venda (chamado pelo PDV e pela entrega do Delivery): pede avaliação ao cliente.
+function pedirAvaliacaoVenda(cliId){
+  const cli=(N.clientes||[]).find(c=>c.id===cliId);
+  if(!cli || !cli.wpp){ showToast('Cliente sem WhatsApp cadastrado.','aviso'); return; }
+  const nome=cli.nome.split(' ')[0];
+  const msg = (N.googleReviewUrl||'').trim()
+    ? `Oi ${nome}! 😊 Obrigado pela preferência na ${N.nome||'nossa loja'}. Se puder, deixe sua avaliação aqui — leva 30 segundos e ajuda muito: ${repGoogleUrl()}`
+    : `Oi ${nome}! 😊 Obrigado pela preferência na ${N.nome||'nossa loja'}. De 0 a 10, quanto você recomendaria a gente? Sua resposta ajuda muito! 🙏`;
+  showWpp(cli.nome, msg);
+}
+function pedirAvaliacaoEntrega(i){
+  const p=N.pedidos[i]; if(!p) return;
+  if((p.tel||'').replace(/\D/g,'').length<10){ showToast('Pedido sem WhatsApp.','aviso'); return; }
+  const nome=(p.cliente||'').split(' ')[0];
+  const msg = (N.googleReviewUrl||'').trim()
+    ? `Oi ${nome}! 😊 Obrigado pelo pedido na ${N.nome||'nossa loja'}! Se puder, avalie a gente aqui — leva 30 segundos: ${repGoogleUrl()}`
+    : `Oi ${nome}! 😊 Obrigado pelo pedido na ${N.nome||'nossa loja'}! De 0 a 10, quanto você recomendaria a gente? 🙏`;
+  showWpp(p.tel, msg);
+}
 function salvarConfigReputacao(){
   N.googleReviewUrl = document.getElementById('rep-google').value.trim();
   salvarDados();
@@ -1466,7 +1485,11 @@ function closeModal(id) {
 // ── UTILS ──────────────────────────────────────────────────────
 function showToast(msg, tipo='ok') {
   const t=document.getElementById('toast');
-  document.getElementById('toast-msg').textContent=msg;
+  // Toasts com botão (Fluxo C, pós-venda…) substituem o innerHTML e apagam o span;
+  // recria-o se necessário pra não quebrar os próximos toasts.
+  let m=document.getElementById('toast-msg');
+  if(!m){ t.innerHTML='<span id="toast-msg"></span>'; m=document.getElementById('toast-msg'); }
+  m.textContent=msg;
   t.className='toast show';
   if(tipo==='erro') t.style.background='var(--c)';
   else if(tipo==='aviso') t.style.background='var(--a)';
@@ -3464,6 +3487,14 @@ function confirmarVenda() {
       clearTimeout(t._timer);
       t._timer=setTimeout(()=>t.classList.remove('show'),8000);
     },1500);
+  } else if(c?.wpp){
+    // Pós-venda: sugere pedir avaliação ao cliente (fecha o ciclo da Reputação)
+    setTimeout(()=>{
+      const t=document.getElementById('toast');
+      t.innerHTML=`✓ Venda registrada. <button class="btn btn-p btn-sm" style="margin-left:6px" onclick="pedirAvaliacaoVenda('${escJs(c.id)}');this.closest('.toast').classList.remove('show')">📲 Pedir avaliação de ${esc((c.nome||'').split(' ')[0])}</button>`;
+      t.className='toast show'; t.style.background='var(--g1)';
+      clearTimeout(t._timer); t._timer=setTimeout(()=>t.classList.remove('show'),9000);
+    },1500);
   }
   _vendaSnapshot=null;
 }
@@ -4022,6 +4053,13 @@ function atualizarPedido(i, status){
 
     showToast(`✓ Entregue! ${fmt(p.valor)} no caixa.${pts?' +'+pts+' pts':''}`);
     renderDashboard(); renderCaixa(); initSidebarBadges();
+    // Pós-entrega: sugere pedir avaliação ao cliente
+    if((p.tel||'').replace(/\D/g,'').length>=10) setTimeout(()=>{
+      const t=document.getElementById('toast');
+      t.innerHTML=`✓ Entregue! <button class="btn btn-p btn-sm" style="margin-left:6px" onclick="pedirAvaliacaoEntrega(${i});this.closest('.toast').classList.remove('show')">📲 Pedir avaliação</button>`;
+      t.className='toast show'; t.style.background='var(--g1)';
+      clearTimeout(t._timer); t._timer=setTimeout(()=>t.classList.remove('show'),9000);
+    },1500);
   }
 
   salvarDados(); renderDelivery();
