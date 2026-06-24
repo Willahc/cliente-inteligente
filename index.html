@@ -834,6 +834,32 @@ textarea.fi{resize:vertical;min-height:68px}
         </div>
       </div>
 
+      <!-- CARTÃO FIDELIDADE (CARIMBOS) -->
+      <div class="screen" id="screen-carimbos">
+        <div class="g4g">
+          <div class="met"><div class="met-lb">Clientes com cartão</div><div class="met-vl" id="crm-ativos">0</div></div>
+          <div class="met"><div class="met-lb">Prêmios prontos</div><div class="met-vl a" id="crm-prontos">0</div></div>
+          <div class="met"><div class="met-lb">Meta (carimbos)</div><div class="met-vl" id="crm-meta">10</div></div>
+          <div class="met"><div class="met-lb">Programa</div><div class="met-vl" id="crm-status">Inativo</div></div>
+        </div>
+        <div class="g2" style="margin-bottom:14px">
+          <div class="card">
+            <div class="card-hd"><div class="card-tt">🎟️ Configuração do cartão</div></div>
+            <div class="fl"><label style="display:flex;align-items:center;justify-content:space-between">Cartão ativo <input type="checkbox" id="crm-ativo" style="width:16px;height:16px;accent-color:var(--v)"></label></div>
+            <div class="fg"><div class="fl"><label>Carimbos para o prêmio</label><input type="number" class="fi" id="crm-meta-in" value="10" min="2"></div><div class="fl"><label>Prêmio</label><input type="text" class="fi" id="crm-premio" placeholder="Ex.: 1 produto grátis"></div></div>
+            <button class="btn btn-p btn-sm" onclick="salvarConfigCartao()">Salvar cartão</button>
+          </div>
+          <div class="card">
+            <div class="card-hd"><div class="card-tt">Como funciona</div></div>
+            <div style="font-size:13px;color:#475569;line-height:1.5">A cada compra de um cliente cadastrado, ele ganha <b>1 carimbo</b> automaticamente. Ao atingir a meta, libera o prêmio. Use <b>📲 Avisar</b> para mandar o progresso pelo WhatsApp ("faltam 3 pra ganhar") — é o que traz o cliente de volta.</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><div class="card-tt">Clientes</div></div>
+          <div id="crm-lista"></div>
+        </div>
+      </div>
+
       <!-- PREDITIVA -->
       <div class="screen" id="screen-preditiva">
         <div class="g2">
@@ -1060,6 +1086,7 @@ const N = {
   obrigacoes:[], fornecedores:[], funcionarios:[],
   transacoes:[], pedidos:[], avaliacoes:[],
   limiar:30, endNivel:'simples', diasAlertaVal:30, googleReviewUrl:'',
+  cartao:{ ativo:false, meta:10, premio:'' },
   pontos:{ ativo:false, razao:10, validade:90, minResgate:50 },
   vendas:{ jan:0, fev:0, mar:0, abr:0, mai:0, jun:0 }
 };
@@ -1147,7 +1174,8 @@ function _aplicarDados(dados){
   });
   if(!N.lat) N.lat=null;
   if(!N.lng) N.lng=null;
-  N.clientes.forEach(c=>{ if(!c.id) c.id=uid(); });
+  if(!N.cartao||typeof N.cartao!=='object') N.cartao={ativo:false,meta:10,premio:''};
+  N.clientes.forEach(c=>{ if(!c.id) c.id=uid(); if(c.carimbos==null) c.carimbos=0; });
   N.transacoes.forEach(t=>{ if(!t.id) t.id=uid(); });
   N.pedidos.forEach(p=>{ if(!p.id) p.id=uid(); if(!p.criadoEm) p.criadoEm=new Date().toISOString(); });
   // recalcula vendas mensais a partir das transações reais
@@ -1313,7 +1341,7 @@ const titulosMap = {
   preditiva:'Análise preditiva', relatorios:'Relatórios',
   caixa:'Fluxo de caixa', fornecedores:'Fornecedores',
   pessoas:'Equipe', pontos:'Programa de pontos',
-  precificacao:'Precificação', reputacao:'Reputação'
+  precificacao:'Precificação', reputacao:'Reputação', carimbos:'Cartão fidelidade'
 };
 
 function go(id, el) {
@@ -1333,7 +1361,7 @@ function go(id, el) {
     relatorios: renderRelatorios, caixa: renderCaixa,
     fornecedores: renderFornecedores, pessoas: renderPessoas,
     pontos: renderPontos, precificacao: renderPrecificacao,
-    reputacao: renderReputacao
+    reputacao: renderReputacao, carimbos: renderCarimbos
   };
   if(renders[id]) renders[id]();
 }
@@ -1468,6 +1496,65 @@ function salvarConfigReputacao(){
   N.googleReviewUrl = document.getElementById('rep-google').value.trim();
   salvarDados();
   showToast('Link de avaliação salvo.','ok');
+}
+// ── CARTÃO FIDELIDADE (CARIMBOS) ───────────────────────────────
+function renderCarimbos(){
+  const cfg=N.cartao||{}; const meta=cfg.meta||10;
+  document.getElementById('crm-ativos').textContent=(N.clientes||[]).filter(c=>(c.carimbos||0)>0).length;
+  document.getElementById('crm-prontos').textContent=(N.clientes||[]).filter(c=>(c.carimbos||0)>=meta).length;
+  document.getElementById('crm-meta').textContent=meta;
+  document.getElementById('crm-status').textContent=cfg.ativo?'Ativo':'Inativo';
+  const tog=document.getElementById('crm-ativo'); if(tog) tog.checked=!!cfg.ativo;
+  const im=document.getElementById('crm-meta-in'); if(im) im.value=meta;
+  const ip=document.getElementById('crm-premio'); if(ip) ip.value=cfg.premio||'';
+  renderCarimbosLista();
+}
+function renderCarimbosLista(){
+  const el=document.getElementById('crm-lista'); if(!el) return;
+  const meta=(N.cartao||{}).meta||10;
+  const cls=(N.clientes||[]).slice().sort((a,b)=>(b.carimbos||0)-(a.carimbos||0));
+  if(!cls.length){ el.innerHTML='<div style="padding:18px;color:#64748b">Cadastre clientes para começar a carimbar.</div>'; return; }
+  el.innerHTML='<table class="tbl"><thead><tr><th>Cliente</th><th>Carimbos</th><th></th></tr></thead><tbody>'+
+   cls.map(c=>{ const n=c.carimbos||0, pronto=n>=meta, pct=Math.min(100,Math.round(n/meta*100));
+     const barra=`<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;height:8px;background:#e2e8f0;border-radius:5px;overflow:hidden;max-width:140px"><div style="height:100%;width:${pct}%;background:${pronto?'#1D9E75':'#BA7517'}"></div></div><span style="font-size:12px;font-weight:700;color:${pronto?'#1D9E75':'#334155'}">${n}/${meta}</span></div>`;
+     const acoes=`<button class="btn btn-g btn-sm" onclick="carimbar('${escJs(c.id)}')">➕ Carimbar</button> `+
+       (c.wpp?`<button class="btn btn-g btn-sm" onclick="avisarCarimbo('${escJs(c.id)}')">📲 Avisar</button> `:'')+
+       (pronto?`<button class="btn btn-p btn-sm" onclick="resgatarCarimbo('${escJs(c.id)}')">🎁 Resgatar</button>`:'');
+     return `<tr><td>${esc(c.nome)}${pronto?' 🎁':''}</td><td>${barra}</td><td style="white-space:nowrap">${acoes}</td></tr>`;
+   }).join('')+'</tbody></table>';
+}
+function salvarConfigCartao(){
+  N.cartao=N.cartao||{};
+  N.cartao.ativo=document.getElementById('crm-ativo').checked;
+  N.cartao.meta=Math.max(2,parseInt(document.getElementById('crm-meta-in').value||10));
+  N.cartao.premio=document.getElementById('crm-premio').value.trim();
+  salvarDados(); renderCarimbos(); showToast('Cartão fidelidade salvo.');
+}
+function carimbar(cliId){
+  const c=(N.clientes||[]).find(x=>x.id===cliId); if(!c) return;
+  const meta=(N.cartao||{}).meta||10;
+  c.carimbos=(c.carimbos||0)+1; salvarDados(); renderCarimbos();
+  if(c.carimbos>=meta) showToast(`🎁 ${c.nome.split(' ')[0]} completou o cartão!`); else showToast(`+1 carimbo · ${c.carimbos}/${meta}`);
+}
+function resgatarCarimbo(cliId){
+  const c=(N.clientes||[]).find(x=>x.id===cliId); if(!c) return;
+  const meta=(N.cartao||{}).meta||10;
+  if((c.carimbos||0)<meta){ showToast('Ainda não atingiu a meta.','aviso'); return; }
+  if(!confirm(`Resgatar o prêmio de ${c.nome}? Isso zera o ciclo (− ${meta} carimbos).`)) return;
+  c.carimbos-=meta; salvarDados(); renderCarimbos();
+  showToast(`🎁 Prêmio resgatado para ${c.nome.split(' ')[0]}!`);
+  if(c.wpp) avisarCarimbo(cliId, true);
+}
+function avisarCarimbo(cliId, resgate){
+  const c=(N.clientes||[]).find(x=>x.id===cliId); if(!c) return;
+  if(!c.wpp){ showToast('Cliente sem WhatsApp.','aviso'); return; }
+  const meta=(N.cartao||{}).meta||10, n=c.carimbos||0, nome=c.nome.split(' ')[0];
+  const premio=(N.cartao||{}).premio||'um prêmio';
+  let msg;
+  if(resgate) msg=`Parabéns ${nome}! 🎁 Você resgatou: ${premio}. Obrigado pela fidelidade na ${N.nome||'nossa loja'}!`;
+  else if(n>=meta) msg=`Oi ${nome}! 🎉 Seu cartão fidelidade está COMPLETO (${n}/${meta}) — venha resgatar ${premio}! ${N.nome||''}`;
+  else msg=`Oi ${nome}! 😊 Você já tem ${n}/${meta} carimbos no cartão da ${N.nome||'nossa loja'}. Faltam ${meta-n} pra ganhar ${premio}!`;
+  showWpp(c.wpp, msg);
 }
 function renderRepLista(){
   const el=document.getElementById('rep-lista'); if(!el) return;
@@ -1951,12 +2038,12 @@ const PERFIS = {
     bg: '#E1F5EE',
     telas: ['dashboard','alertas','pdv','clientes','estoque','delivery',
             'caixa','fornecedores','precificacao','pessoas','pontos',
-            'preditiva','relatorios','reputacao'],
+            'preditiva','relatorios','reputacao','carimbos'],
     sidebar: [
       { label:'Início',     items:[{id:'dashboard',ico:'📊',label:'Dashboard'},{id:'alertas',ico:'🔔',label:'Alertas',badge:'badge-alertas'}] },
       { label:'Compras',    items:[{id:'fornecedores',ico:'🤝',label:'Fornecedores'},{id:'precificacao',ico:'🏷️',label:'Precificação'}] },
       { label:'Estoque',    items:[{id:'estoque',ico:'📦',label:'Estoque',badge:'badge-estoque'}] },
-      { label:'Vendas',     items:[{id:'pdv',ico:'🛒',label:'Registrar venda'},{id:'delivery',ico:'🏍️',label:'Delivery',badge:'badge-delivery'},{id:'clientes',ico:'👥',label:'Clientes'},{id:'pontos',ico:'⭐',label:'Pontos & Fidelidade'},{id:'reputacao',ico:'🌟',label:'Reputação'}] },
+      { label:'Vendas',     items:[{id:'pdv',ico:'🛒',label:'Registrar venda'},{id:'delivery',ico:'🏍️',label:'Delivery',badge:'badge-delivery'},{id:'clientes',ico:'👥',label:'Clientes'},{id:'pontos',ico:'⭐',label:'Pontos & Fidelidade'},{id:'reputacao',ico:'🌟',label:'Reputação'},{id:'carimbos',ico:'🎟️',label:'Cartão fidelidade'}] },
       { label:'Financeiro', items:[{id:'caixa',ico:'💰',label:'Fluxo de caixa',badge:'badge-caixa'},{id:'pessoas',ico:'👨‍💼',label:'Equipe'}] },
       { label:'Inteligência',items:[{id:'preditiva',ico:'🧠',label:'Análise preditiva'},{id:'relatorios',ico:'📈',label:'Relatórios'}] },
     ]
@@ -1966,7 +2053,7 @@ const PERFIS = {
     ico: '🛒',
     cor: '#BA7517',
     bg: '#FAEEDA',
-    telas: ['pdv','clientes','delivery','pontos','alertas','reputacao'],
+    telas: ['pdv','clientes','delivery','pontos','alertas','reputacao','carimbos'],
     sidebar: [
       { label:'Vendas', items:[
         {id:'pdv',ico:'🛒',label:'Registrar venda'},
@@ -1974,6 +2061,7 @@ const PERFIS = {
         {id:'clientes',ico:'👥',label:'Clientes'},
         {id:'pontos',ico:'⭐',label:'Pontos & Fidelidade'},
         {id:'reputacao',ico:'🌟',label:'Reputação'},
+        {id:'carimbos',ico:'🎟️',label:'Cartão fidelidade'},
         {id:'alertas',ico:'🔔',label:'Alertas',badge:'badge-alertas'},
       ]}
     ]
@@ -3477,6 +3565,11 @@ function confirmarVenda() {
   if(c){c.dias=0;c.ticket=Math.round((c.ticket+tot)/2);}
   let pts=0;
   if(c) pts=acumularPontos(c.nome,tot);
+  let carimboMsg='';
+  if(c && N.cartao?.ativo){
+    c.carimbos=(c.carimbos||0)+1;
+    carimboMsg = c.carimbos>=(N.cartao.meta||10) ? ' · 🎁 cartão completo!' : ' · +1 carimbo';
+  }
 
   // Limpa carrinho
   Object.keys(carrinho).forEach(k=>delete carrinho[k]);
@@ -3492,7 +3585,7 @@ function confirmarVenda() {
   renderDashboard(); renderAlertas(); renderClientes(); renderEstoque(); initSidebarBadges();
 
   const pagLabel={dinheiro:'💵 Dinheiro',pix:'💠 Pix',cartao:'💳 Cartão'}[pagamento]||pagamento;
-  showToast(`✓ ${fmt(tot)} — ${pagLabel}${pts?' · +'+pts+' pts':''}`);
+  showToast(`✓ ${fmt(tot)} — ${pagLabel}${pts?' · +'+pts+' pts':''}${carimboMsg}`);
 
   // Fluxo C: alerta de insumos baixos com ação direta
   if(insumosAbaixo.length){
