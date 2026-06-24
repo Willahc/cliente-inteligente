@@ -824,6 +824,10 @@ textarea.fi{resize:vertical;min-height:68px}
             <div style="font-size:12px;color:#64748b;margin-top:8px;line-height:1.4">Promotores (9-10) recebem este link por WhatsApp para avaliar no Google. Detratores (0-6) são recuperados internamente <b>antes</b> de virar uma nota baixa pública.</div>
           </div>
         </div>
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-hd"><div class="card-tt">NPS por mês</div></div>
+          <div id="rep-trend"></div>
+        </div>
         <div class="card">
           <div class="card-hd"><div class="card-tt">Feedback recente</div></div>
           <div id="rep-lista"></div>
@@ -1371,7 +1375,25 @@ function renderReputacao(){
     bar('😀 Promotores (9-10)', s.p, '#1D9E75') +
     bar('😐 Neutros (7-8)',     s.n, '#BA7517') +
     bar('🙁 Detratores (0-6)',  s.d, '#D1495B');
+  renderRepTrend();
   renderRepLista();
+}
+// Histórico de NPS por mês (últimos 6) — barras inline, sem dependência.
+function renderRepTrend(){
+  const el=document.getElementById('rep-trend'); if(!el) return;
+  const avs=N.avaliacoes||[];
+  if(!avs.length){ el.innerHTML='<div style="padding:12px;color:#64748b;font-size:13px">Sem dados ainda — o histórico de NPS aparece conforme você registra avaliações.</div>'; return; }
+  const meses=[], base=new Date();
+  for(let k=5;k>=0;k--){ const d=new Date(base.getFullYear(), base.getMonth()-k, 1);
+    meses.push({ key:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`, label:d.toLocaleDateString('pt-BR',{month:'short'}) }); }
+  const byMes={};
+  avs.forEach(a=>{ const k=(a.data||'').slice(0,7); (byMes[k]=byMes[k]||[]).push(a); });
+  el.innerHTML='<div style="display:flex;align-items:flex-end;gap:10px;height:130px;padding:10px 4px 0">'+
+    meses.map(m=>{ const g=byMes[m.key]||[]; const nps=_repStats(g).nps;
+      const h = nps===null?0:Math.round(Math.abs(nps)/100*92)+4;
+      const cor = nps===null?'#cbd5e1':(nps>=50?'#1D9E75':(nps>=0?'#BA7517':'#D1495B'));
+      return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px"><span style="font-size:12px;font-weight:700;color:${cor}">${nps===null?'—':nps}</span><div style="width:68%;height:${h}px;background:${cor};border-radius:4px 4px 0 0"></div><span style="font-size:11px;color:#64748b">${m.label} (${g.length})</span></div>`;
+    }).join('')+'</div>';
 }
 function _repPick(n, el){
   _repNota = n;
