@@ -170,38 +170,7 @@ textarea.fi{resize:vertical;min-height:68px}
 .sp-rt{background:var(--rc);color:#3C3489;font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px}
 .sp-ok{background:var(--vc);color:var(--ve);font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px}
 
-/* MOBILE */
-@media (max-width:768px){
-  /* menu lateral vira drawer off-canvas com backdrop tocável */
-  .sb{position:fixed;left:-86vw;top:0;width:84vw;max-width:300px;height:100vh;height:100dvh;z-index:50;transition:left .22s ease;box-shadow:2px 0 16px rgba(0,0,0,.18);padding-top:env(safe-area-inset-top)}
-  .sb.open{left:0}
-  .sb.open ~ #sb-backdrop{display:block;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:45}
-  .main{width:100vw}
-  /* topbar respeita o notch e não estoura em telas estreitas */
-  .topbar{gap:8px;padding:10px 14px;padding-top:max(10px,env(safe-area-inset-top));padding-left:max(14px,env(safe-area-inset-left));padding-right:max(14px,env(safe-area-inset-right))}
-  #tb-title{font-size:14px}
-  .content{padding:12px;padding-bottom:max(16px,env(safe-area-inset-bottom));-webkit-overflow-scrolling:touch}
-  .g2,.g4g{grid-template-columns:1fr}
-  .g3,.cards3{grid-template-columns:1fr 1fr}
-  .seg-grid{grid-template-columns:1fr 1fr}
-  .pdv-grid{grid-template-columns:1fr;height:auto}
-  .carr{max-height:360px}
-  .mo-box{width:96vw;max-width:96vw;padding:16px;max-height:88dvh}
-  .tabs{overflow-x:auto;white-space:nowrap;flex-wrap:nowrap;-webkit-overflow-scrolling:touch}
-  /* tabelas largas rolam na horizontal em vez de quebrar a página */
-  table.tbl{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
-  .tbl th,.tbl td{padding:8px 9px;white-space:nowrap}
-  .fg,.fg3{grid-template-columns:1fr}
-  /* >=16px evita o zoom automático do iOS ao focar campo */
-  .fi,textarea.fi,select.fi{font-size:16px}
-  /* alvos de toque maiores */
-  .ni{padding:11px 12px}
-  .btn{min-height:40px}
-  .btn-sm{min-height:36px}
-  #sb-toggle{display:flex}
-  .tb-hide-sm{display:none}
-}
-@media (min-width:769px){#sb-toggle{display:none!important}}
+/* MOBILE: os overrides ficam no FIM do <style> (depois das regras-base) p/ vencer o cascade. */
 
 /* ONBOARDING */
 .ob-step{display:none}.ob-step.active{display:block}
@@ -278,6 +247,39 @@ textarea.fi{resize:vertical;min-height:68px}
 #sb-nav{flex:1;overflow-y:auto}
 .sb-perfil-badge{font-size:10px;font-weight:500;padding:2px 7px;border-radius:20px;background:var(--vc);color:var(--ve)}
 
+/* === MOBILE (overrides finais — no FIM do <style> p/ vencer o cascade) === */
+@media (max-width:768px){
+  /* menu lateral vira drawer off-canvas com backdrop tocável */
+  .sb{position:fixed;left:-86vw;top:0;width:84vw;max-width:300px;height:100vh;height:100dvh;z-index:50;transition:left .22s ease;box-shadow:2px 0 16px rgba(0,0,0,.18);padding-top:env(safe-area-inset-top)}
+  .sb.open{left:0}
+  .sb.open ~ #sb-backdrop{display:block;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:45}
+  #sb-nav{min-height:0}   /* deixa a lista de telas rolar dentro do drawer (gotcha do flexbox) */
+  .main{width:100vw}
+  /* topbar respeita o notch e não estoura em telas estreitas */
+  .topbar{gap:8px;padding:10px 14px;padding-top:max(10px,env(safe-area-inset-top));padding-left:max(14px,env(safe-area-inset-left));padding-right:max(14px,env(safe-area-inset-right))}
+  #tb-title{font-size:14px}
+  .content{padding:12px;padding-bottom:max(16px,env(safe-area-inset-bottom));-webkit-overflow-scrolling:touch}
+  .g2,.g4g{grid-template-columns:1fr}
+  .g3,.cards3{grid-template-columns:1fr 1fr}
+  .seg-grid{grid-template-columns:1fr 1fr}
+  .pdv-grid{grid-template-columns:1fr;height:auto}
+  .carr{max-height:360px}
+  .mo-box{width:96vw;max-width:96vw;padding:16px;max-height:88dvh}
+  .tabs{overflow-x:auto;white-space:nowrap;flex-wrap:nowrap;-webkit-overflow-scrolling:touch}
+  /* tabelas largas rolam na horizontal em vez de quebrar a página */
+  table.tbl{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .tbl th,.tbl td{padding:8px 9px;white-space:nowrap}
+  .fg,.fg3{grid-template-columns:1fr}
+  /* >=16px evita o zoom automático do iOS ao focar campo */
+  .fi,textarea.fi,select.fi{font-size:16px}
+  /* alvos de toque maiores */
+  .ni{padding:11px 12px}
+  .btn{min-height:40px}
+  .btn-sm{min-height:36px}
+  #sb-toggle{display:flex}
+  .tb-hide-sm{display:none}
+}
+@media (min-width:769px){#sb-toggle{display:none!important}}
 </style>
 <!-- Libs auto-hospedadas em /libs (offline-first, sem dependência de CDN externo).
      Versões: qrcodejs 1.0.0, Chart.js 4.4.1, Fuse.js 7.0.0, Leaflet 1.9.4, jsPDF 2.5.1.
@@ -470,7 +472,7 @@ textarea.fi{resize:vertical;min-height:68px}
   <div class="main">
     <div class="topbar">
       <div style="display:flex;align-items:center;gap:10px">
-        <button id="sb-toggle" onclick="document.querySelector('.sb').classList.toggle('open')" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--g2);padding:2px 6px;display:none">☰</button>
+        <button id="sb-toggle" onclick="document.querySelector('.sb').classList.toggle('open')" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--g2);padding:2px 6px">☰</button>
         <div style="font-size:15px;font-weight:500;color:var(--g1)" id="tb-title">Dashboard</div>
       </div>
       <!-- Busca global — Fuse.js -->
