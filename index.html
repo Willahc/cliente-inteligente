@@ -25,7 +25,8 @@
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--g1)}
 
 /* LAYOUT */
-.app{display:flex;height:100vh;overflow:hidden}
+.app{display:flex;height:100vh;height:100dvh;overflow:hidden}
+#sb-backdrop{display:none}
 .sb{width:220px;background:var(--w);border-right:.5px solid var(--g4);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden}
 .topbar{background:var(--w);border-bottom:.5px solid var(--g4);padding:13px 22px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
@@ -169,24 +170,36 @@ textarea.fi{resize:vertical;min-height:68px}
 .sp-rt{background:var(--rc);color:#3C3489;font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px}
 .sp-ok{background:var(--vc);color:var(--ve);font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px}
 
-/* MOBILE — github.com/davidshimjs/qrcodejs via CDN no head */
+/* MOBILE */
 @media (max-width:768px){
-  .sb{position:fixed;left:-220px;top:0;height:100vh;z-index:50;transition:left .2s;box-shadow:2px 0 12px rgba(0,0,0,.08)}
+  /* menu lateral vira drawer off-canvas com backdrop tocável */
+  .sb{position:fixed;left:-86vw;top:0;width:84vw;max-width:300px;height:100vh;height:100dvh;z-index:50;transition:left .22s ease;box-shadow:2px 0 16px rgba(0,0,0,.18);padding-top:env(safe-area-inset-top)}
   .sb.open{left:0}
+  .sb.open ~ #sb-backdrop{display:block;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:45}
   .main{width:100vw}
-  .topbar{padding:10px 14px}
-  .content{padding:12px}
+  /* topbar respeita o notch e não estoura em telas estreitas */
+  .topbar{gap:8px;padding:10px 14px;padding-top:max(10px,env(safe-area-inset-top));padding-left:max(14px,env(safe-area-inset-left));padding-right:max(14px,env(safe-area-inset-right))}
+  #tb-title{font-size:14px}
+  .content{padding:12px;padding-bottom:max(16px,env(safe-area-inset-bottom));-webkit-overflow-scrolling:touch}
   .g2,.g4g{grid-template-columns:1fr}
-  .g3{grid-template-columns:1fr 1fr}
-  .cards3{grid-template-columns:1fr 1fr}
+  .g3,.cards3{grid-template-columns:1fr 1fr}
+  .seg-grid{grid-template-columns:1fr 1fr}
   .pdv-grid{grid-template-columns:1fr;height:auto}
-  .carr{max-height:320px}
-  .mo-box{width:96vw;max-width:96vw;padding:16px}
-  .tabs{overflow-x:auto;white-space:nowrap;flex-wrap:nowrap}
-  .tbl{font-size:12px}
-  .tbl th,.tbl td{padding:6px 7px}
+  .carr{max-height:360px}
+  .mo-box{width:96vw;max-width:96vw;padding:16px;max-height:88dvh}
+  .tabs{overflow-x:auto;white-space:nowrap;flex-wrap:nowrap;-webkit-overflow-scrolling:touch}
+  /* tabelas largas rolam na horizontal em vez de quebrar a página */
+  table.tbl{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .tbl th,.tbl td{padding:8px 9px;white-space:nowrap}
   .fg,.fg3{grid-template-columns:1fr}
+  /* >=16px evita o zoom automático do iOS ao focar campo */
+  .fi,textarea.fi,select.fi{font-size:16px}
+  /* alvos de toque maiores */
+  .ni{padding:11px 12px}
+  .btn{min-height:40px}
+  .btn-sm{min-height:36px}
   #sb-toggle{display:flex}
+  .tb-hide-sm{display:none}
 }
 @media (min-width:769px){#sb-toggle{display:none!important}}
 
@@ -451,6 +464,9 @@ textarea.fi{resize:vertical;min-height:68px}
     </div>
   </aside>
 
+  <!-- backdrop do menu lateral no celular (fecha ao tocar fora) -->
+  <div id="sb-backdrop" onclick="document.querySelector('.sb').classList.remove('open')"></div>
+
   <div class="main">
     <div class="topbar">
       <div style="display:flex;align-items:center;gap:10px">
@@ -461,11 +477,11 @@ textarea.fi{resize:vertical;min-height:68px}
       <div style="position:relative;flex:1;max-width:320px;margin:0 12px">
         <input type="text" class="fi" id="busca-global" placeholder="🔍 Buscar cliente, produto, transação..."
           oninput="buscaGlobal(this.value)"
-          style="padding-left:12px;font-size:12px;width:100%">
+          style="padding-left:12px;width:100%">
         <div id="busca-resultados" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--w);border:.5px solid var(--g4);border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:80;max-height:360px;overflow-y:auto"></div>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
-        <button class="btn btn-g btn-sm" onclick="showModal('modal-cliente')">+ Cliente</button>
+        <button class="btn btn-g btn-sm tb-hide-sm" onclick="showModal('modal-cliente')">+ Cliente</button>
         <button class="btn btn-p btn-sm" onclick="go('pdv',document.querySelectorAll('.ni')[2])">Nova venda</button>
       </div>
     </div>
@@ -1215,6 +1231,8 @@ const titulosMap = {
 function go(id, el) {
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.querySelectorAll('.ni').forEach(n=>n.classList.remove('active'));
+  // fecha o drawer no celular ao navegar (no desktop é no-op)
+  document.querySelector('.sb')?.classList.remove('open');
   const screen = document.getElementById('screen-'+id);
   if(screen) screen.classList.add('active');
   if(el) el.classList.add('active');
