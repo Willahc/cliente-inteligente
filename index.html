@@ -822,6 +822,8 @@ textarea.fi{resize:vertical;min-height:68px}
             <div class="fl"><label>Seu link de avaliação do Google</label><input class="fi" id="rep-google" placeholder="https://g.page/r/... ou search.google.com/local/writereview?placeid=..."></div>
             <button class="btn btn-g btn-sm" onclick="salvarConfigReputacao()">Salvar link</button>
             <div style="font-size:12px;color:#64748b;margin-top:8px;line-height:1.4">Promotores (9-10) recebem este link por WhatsApp para avaliar no Google. Detratores (0-6) são recuperados internamente <b>antes</b> de virar uma nota baixa pública.</div>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:12px"><input type="checkbox" id="rep-pos-venda" style="width:16px;height:16px;accent-color:var(--v)" onchange="togglePosVenda(this)"> Sugerir pedir avaliação após cada venda</label>
+            <div id="rep-qr"></div>
           </div>
         </div>
         <div class="card" style="margin-bottom:14px">
@@ -1396,6 +1398,8 @@ function renderReputacao(){
     (N.clientes||[]).map(c=>`<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join('');
   // link do Google
   const g = document.getElementById('rep-google'); if(g) g.value = N.googleReviewUrl || '';
+  const pv = document.getElementById('rep-pos-venda'); if(pv) pv.checked = N.pedirAvalPos!==false;
+  renderRepQR();
   // distribuição (barras)
   const bar = (lbl,val,cor)=>{ const pct=s.t?Math.round(val/s.t*100):0;
     return `<div style="margin:9px 0"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px"><span>${lbl}</span><span>${val} (${pct}%)</span></div><div style="height:9px;background:#e2e8f0;border-radius:5px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${cor}"></div></div></div>`; };
@@ -1492,9 +1496,26 @@ function pedirAvaliacaoEntrega(i){
     : `Oi ${nome}! 😊 Obrigado pelo pedido na ${N.nome||'nossa loja'}! De 0 a 10, quanto você recomendaria a gente? 🙏`;
   showWpp(p.tel, msg);
 }
+function togglePosVenda(el){ N.pedirAvalPos = el.checked; salvarDados(); }
+// QR do link de avaliação do Google — pro balcão (cliente escaneia e avalia).
+function renderRepQR(){
+  const el=document.getElementById('rep-qr'); if(!el) return;
+  const url=(N.googleReviewUrl||'').trim();
+  if(!url){ el.innerHTML='<div style="font-size:12px;color:#64748b;margin-top:10px">Salve seu link do Google acima para gerar um QR pro balcão.</div>'; return; }
+  el.innerHTML=`<div style="text-align:center;padding:10px 0">
+    <div id="rep-qr-canvas" style="display:inline-block;padding:10px;background:#fff;border-radius:8px;border:.5px solid var(--g4)"></div>
+    <div style="font-size:12px;color:#64748b;margin-top:6px">Imprima e deixe no balcão — o cliente escaneia e avalia no Google.</div>
+    <button class="btn btn-g btn-sm" style="margin-top:6px" onclick="window.print()">🖨️ Imprimir</button>
+  </div>`;
+  if(window.QRCode){
+    new window.QRCode(document.getElementById('rep-qr-canvas'),
+      { text:url, width:150, height:150, colorDark:'#2C2C2A', colorLight:'#ffffff', correctLevel: window.QRCode.CorrectLevel.M });
+  } else { document.getElementById('rep-qr-canvas').textContent='QR indisponível neste navegador.'; }
+}
 function salvarConfigReputacao(){
   N.googleReviewUrl = document.getElementById('rep-google').value.trim();
   salvarDados();
+  renderRepQR();
   showToast('Link de avaliação salvo.','ok');
 }
 // ── CARTÃO FIDELIDADE (CARIMBOS) ───────────────────────────────
@@ -3602,7 +3623,7 @@ function confirmarVenda() {
       clearTimeout(t._timer);
       t._timer=setTimeout(()=>t.classList.remove('show'),8000);
     },1500);
-  } else if(c?.wpp){
+  } else if(c?.wpp && N.pedirAvalPos!==false){
     // Pós-venda: sugere pedir avaliação ao cliente (fecha o ciclo da Reputação)
     setTimeout(()=>{
       const t=document.getElementById('toast');
@@ -4169,7 +4190,7 @@ function atualizarPedido(i, status){
     showToast(`✓ Entregue! ${fmt(p.valor)} no caixa.${pts?' +'+pts+' pts':''}`);
     renderDashboard(); renderCaixa(); initSidebarBadges();
     // Pós-entrega: sugere pedir avaliação ao cliente
-    if((p.tel||'').replace(/\D/g,'').length>=10) setTimeout(()=>{
+    if((p.tel||'').replace(/\D/g,'').length>=10 && N.pedirAvalPos!==false) setTimeout(()=>{
       const t=document.getElementById('toast');
       t.innerHTML=`✓ Entregue! <button class="btn btn-p btn-sm" style="margin-left:6px" onclick="pedirAvaliacaoEntrega(${i});this.closest('.toast').classList.remove('show')">📲 Pedir avaliação</button>`;
       t.className='toast show'; t.style.background='var(--g1)';
