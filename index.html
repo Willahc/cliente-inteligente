@@ -990,9 +990,11 @@ textarea.fi{resize:vertical;min-height:68px}
       <div style="background:var(--g3);border-radius:8px;padding:11px 13px;font-size:12px;color:var(--g2);margin-bottom:10px">💾 Dados salvos neste dispositivo (neste navegador). <b>Não é um backup na nuvem</b> — baixe uma cópia de segurança regularmente.</div>
       <div style="border:.5px solid var(--g4);border-radius:8px;padding:11px 13px;margin-bottom:4px">
         <div style="font-size:13px;font-weight:500;margin-bottom:3px">Cópia de segurança</div>
-        <div style="font-size:11px;color:var(--g2);margin-bottom:9px">Baixe um arquivo com todos os seus dados (clientes, vendas, estoque…) e guarde-o em local seguro. Use "Restaurar" para recuperá-los em outro aparelho ou após limpar o navegador.</div>
+        <div style="font-size:11px;color:var(--g2);margin-bottom:6px">Mande uma cópia dos seus dados pro seu <b>WhatsApp, Drive ou e-mail</b> e guarde em local seguro. Use "Restaurar" para recuperá-los em outro aparelho ou após limpar o navegador.</div>
+        <div id="bkp-status" style="font-size:11px;margin-bottom:9px"></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-g btn-sm" onclick="baixarBackup()">⬇️ Baixar backup</button>
+          <button class="btn btn-p btn-sm" onclick="enviarBackup()">📤 Enviar (WhatsApp/Drive)</button>
+          <button class="btn btn-g btn-sm" onclick="baixarBackup()">⬇️ Baixar arquivo</button>
           <button class="btn btn-g btn-sm" onclick="document.getElementById('restore-file').click()">⬆️ Restaurar</button>
           <input type="file" id="restore-file" accept="application/json,.json" style="display:none" onchange="restaurarBackup(this.files[0]);this.value='';">
         </div>
@@ -1196,23 +1198,72 @@ async function limparDados() {
   location.reload();
 }
 
-// ── BACKUP MANUAL (export/import JSON) ─────────────────────────
+// ── BACKUP (export/import + envio pro WhatsApp/Drive) ──────────
+// Monta o payload versionado (com contagens p/ conferência na restauração).
+function _backupPayload(){
+  N._v = SCHEMA_VERSION;
+  N._saved = new Date().toISOString();
+  N._app = 'cliente-inteligente';
+  const payload = { ...N, _counts:{
+    clientes:(N.clientes||[]).length, produtos:(N.produtos||[]).length,
+    transacoes:(N.transacoes||[]).length, avaliacoes:(N.avaliacoes||[]).length } };
+  const nomeSeg = (N.nome||'negocio').replace(/[^\w\-]+/g,'_').replace(/^_+|_+$/g,'')||'negocio';
+  return { json: JSON.stringify(payload, null, 2),
+           filename: `backup_cliente_inteligente_${nomeSeg}_${new Date().toISOString().slice(0,10)}.json` };
+}
+function _downloadBackup(json, filename){
+  const url = URL.createObjectURL(new Blob([json], {type:'application/json'}));
+  const a = document.createElement('a'); a.href=url; a.download=filename; a.click();
+  URL.revokeObjectURL(url);
+}
+// Marca que uma cópia REAL saiu do aparelho (≠ salvamento local automático).
+function marcarBackup(){ N._lastBackup = new Date().toISOString(); salvarDados(); atualizarStatusBackup(); }
+
 function baixarBackup() {
+  try { const {json, filename}=_backupPayload(); _downloadBackup(json, filename); marcarBackup();
+        showToast('Backup baixado! Guarde o arquivo em local seguro.'); }
+  catch(e){ showToast('Erro ao gerar backup','erro'); }
+}
+// Envia o arquivo pelo menu de compartilhar do aparelho (WhatsApp salvo, Drive,
+// e-mail…). É o jeito de tirar os dados do aparelho sem servidor/nuvem própria.
+async function enviarBackup(){
   try {
-    N._v = SCHEMA_VERSION;
-    N._saved = new Date().toISOString();
-    const blob = new Blob([JSON.stringify(N, null, 2)], {type:'application/json'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    const nomeSeg = (N.nome||'negocio').replace(/[^\w\-]+/g,'_').replace(/^_+|_+$/g,'')||'negocio';
-    a.href = url;
-    a.download = `backup_cliente_inteligente_${nomeSeg}_${new Date().toISOString().slice(0,10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast('Backup baixado! Guarde o arquivo em local seguro.');
-  } catch(e) {
-    showToast('Erro ao gerar backup','erro');
+    const {json, filename}=_backupPayload();
+    const file = new File([json], filename, {type:'application/json'});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      try {
+        await navigator.share({ files:[file], title:'Backup — Cliente Inteligente',
+          text:'Guarde este arquivo do seu negócio em local seguro (mande pra você mesmo no WhatsApp, salve no Drive ou e-mail).' });
+        marcarBackup(); showToast('Backup enviado! Guarde o arquivo.');
+      } catch(err){ if(err && err.name==='AbortError') return;
+        _downloadBackup(json, filename); marcarBackup(); showToast('Backup baixado.'); }
+    } else { _downloadBackup(json, filename); marcarBackup();
+      showToast('Backup baixado (compartilhar não suportado neste navegador).'); }
+  } catch(e){ showToast('Erro ao gerar backup','erro'); }
+}
+// Mostra há quanto tempo foi o último backup real e alerta se estiver velho.
+function atualizarStatusBackup(){
+  const el=document.getElementById('bkp-status'); if(!el) return;
+  const temDados=(N.clientes||[]).length||(N.transacoes||[]).length||(N.produtos||[]).length;
+  if(!N._lastBackup){
+    el.innerHTML = temDados
+      ? '<b style="color:#D1495B">⚠ Você ainda não fez backup.</b> Seus dados estão só neste aparelho.'
+      : 'Nenhum backup ainda.';
+    return;
   }
+  const dias=Math.floor((Date.now()-new Date(N._lastBackup).getTime())/86400000);
+  const quando = dias<=0?'hoje':(dias===1?'ontem':'há '+dias+' dias');
+  const cor = dias>=14?'#D1495B':(dias>=7?'#BA7517':'#1D9E75');
+  el.innerHTML = `Último backup: <b style="color:${cor}">${quando}</b>` + (dias>=7?' — recomendado fazer um novo.':'');
+}
+// Cutuca uma vez por sessão se houver dados e o backup estiver velho/inexistente.
+let _bkpNudged=false;
+function checkBackupStale(){
+  if(_bkpNudged) return; _bkpNudged=true;
+  const temDados=(N.clientes||[]).length||(N.transacoes||[]).length||(N.produtos||[]).length;
+  if(!temDados) return;
+  const dias = N._lastBackup ? Math.floor((Date.now()-new Date(N._lastBackup).getTime())/86400000) : 999;
+  if(dias>=7) setTimeout(()=>showToast('💾 Faça backup: Configurações › Cópia de segurança › Enviar','aviso'), 1800);
 }
 
 function restaurarBackup(file) {
@@ -1402,6 +1453,7 @@ function showModal(id) {
   if(id==='modal-pedido') {
     initModalPedido();
   }
+  if(id==='modal-config') atualizarStatusBackup();
   const m=document.getElementById(id);
   if(m) m.classList.add('open');
 }
@@ -2064,6 +2116,7 @@ function aplicarPerfil(perfil){
   const primeiraTela = cfg.sidebar[0]?.items[0]?.id || 'dashboard';
   const primeiroNi = sb.querySelector('.ni');
   goComPerfil(primeiraTela, primeiroNi, perfil);
+  checkBackupStale();
 }
 
 function goComPerfil(id, el, perfil){
