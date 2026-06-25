@@ -13,7 +13,14 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cliente Inteligente">
 <style>
+/* Plus Jakarta Sans self-hosted (subset latin) — identidade própria, CSP 'self', offline */
+@font-face{font-family:'Jakarta';font-weight:400;font-display:swap;src:url('/libs/jakarta-400.woff2') format('woff2')}
+@font-face{font-family:'Jakarta';font-weight:500;font-display:swap;src:url('/libs/jakarta-500.woff2') format('woff2')}
+@font-face{font-family:'Jakarta';font-weight:600;font-display:swap;src:url('/libs/jakarta-600.woff2') format('woff2')}
+@font-face{font-family:'Jakarta';font-weight:700;font-display:swap;src:url('/libs/jakarta-700.woff2') format('woff2')}
+@font-face{font-family:'Jakarta';font-weight:800;font-display:swap;src:url('/libs/jakarta-800.woff2') format('woff2')}
 :root{
+  --ff:'Jakarta',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
   --v:#1D9E75;--ve:#0F6E56;--vc:#E1F5EE;--vb:#9FE1CB;
   --c:#E24B4A;--cc:#FCEBEB;--cb:#F09595;
   --a:#BA7517;--ac:#FAEEDA;--ab:#FAC775;
@@ -22,7 +29,7 @@
   --bg:#F8F7F4;--w:#FFF;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--g1)}
+body{font-family:var(--ff);background:var(--bg);color:var(--g1);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
 
 /* LAYOUT */
 .app{display:flex;height:100vh;height:100dvh;overflow:hidden}
@@ -1465,7 +1472,11 @@ function _gerarCardapioHTML(){
   const itens=prods.map(p=>`<div class="i"><span>${esc(p.nome)}</span><b>R$ ${esc(String(p.preco||'').replace('.',','))}</b></div>`).join('')||'<div class="i"><span>Cardápio em breve</span></div>';
   const botao=wa?`<a class="wa" href="${esc(wa)}">📲 Fazer pedido no WhatsApp</a>`:'<div class="sem">Configure seu WhatsApp no app para receber pedidos.</div>';
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(loja)}</title><style>
-*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f1f5f9;color:#0f172a}
+@font-face{font-family:'Jakarta';font-weight:400;font-display:swap;src:url('/libs/jakarta-400.woff2') format('woff2')}
+@font-face{font-family:'Jakarta';font-weight:600;font-display:swap;src:url('/libs/jakarta-600.woff2') format('woff2')}
+@font-face{font-family:'Jakarta';font-weight:700;font-display:swap;src:url('/libs/jakarta-700.woff2') format('woff2')}
+@font-face{font-family:'Jakarta';font-weight:800;font-display:swap;src:url('/libs/jakarta-800.woff2') format('woff2')}
+*{box-sizing:border-box}body{margin:0;font-family:'Jakarta',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f1f5f9;color:#0f172a}
 .wrap{max-width:520px;margin:0 auto;padding:18px}
 .hd{text-align:center;padding:22px 14px;background:#1D9E75;color:#fff;border-radius:0 0 16px 16px}
 .hd h1{margin:0;font-size:22px}.hd p{margin:4px 0 0;font-size:13px;opacity:.9}
