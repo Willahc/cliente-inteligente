@@ -1034,6 +1034,7 @@ textarea.fi{resize:vertical;min-height:68px}
       <div style="border:.5px solid var(--g4);border-radius:8px;padding:11px 13px;margin-top:8px">
         <div style="font-size:13px;font-weight:500;margin-bottom:3px">☁️ Conta na nuvem <span style="font-size:10px;color:var(--g2)">(opcional)</span></div>
         <div style="font-size:11px;color:var(--g2);margin-bottom:9px">Crie uma conta pra <b>publicar seu cardápio na internet</b> e guardar <b>backup cifrado na nuvem</b>. Os dados sobem criptografados — só você abre.</div>
+        <div style="font-size:11px;color:#791F1F;background:var(--cc);border-radius:8px;padding:7px 10px;margin-bottom:9px">⚠️ <b>Guarde bem a sua senha.</b> Como o backup é cifrado só com ela, se você esquecê-la <b>nem nós conseguimos recuperar</b> os dados na nuvem.</div>
         <div id="conta-area"></div>
       </div>
       <div class="mo-ft" style="justify-content:space-between"><button class="btn btn-danger btn-sm" onclick="limparDados()">🗑 Apagar tudo</button><div style="display:flex;gap:8px"><button class="btn btn-g" onclick="closeModal('modal-config')">Fechar</button><button class="btn btn-p" onclick="salvarConfig()">Salvar</button></div></div>
@@ -1361,6 +1362,11 @@ async function backupNuvem(){
   if(!N.conta){ showToast('Entre na sua conta na nuvem primeiro.','aviso'); return; }
   try{
     const dados={...N}; delete dados.conta;
+    // Rede de segurança contra perda silenciosa: mostra quantos registros vão subir.
+    // Se este aparelho está quase vazio (instalação nova), o dono vê e cancela antes
+    // de sobrescrever o backup bom de outro celular.
+    const nItens=Object.values(dados).reduce((s,v)=>s+(Array.isArray(v)?v.length:0),0);
+    if(!confirm('Enviar backup com '+nItens+' registros para a nuvem?\n\nIsto substitui o backup anterior. Se este aparelho está quase vazio, NÃO confirme — você apagaria o backup bom de outro dispositivo.')) return;
     const blob=await _encryptBlob(N.conta.keyB64, dados);
     await _api('/backup','PUT', blob, N.conta.token);
     marcarBackup(); showToast('☁️ Backup salvo na nuvem (cifrado).');
