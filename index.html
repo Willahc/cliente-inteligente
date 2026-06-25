@@ -936,6 +936,18 @@ textarea.fi{resize:vertical;min-height:68px}
 
 <div class="mo" id="modal-cliente"><div class="mo-box"><div class="mo-hd"><div class="mo-tt">Novo cliente</div><button class="mo-cl" onclick="closeModal('modal-cliente')">×</button></div><div class="fg"><div class="fl"><label>Nome</label><input type="text" class="fi" id="c-nome" placeholder="Ex: Maria Silva"></div><div class="fl"><label>WhatsApp</label><input type="tel" class="fi" id="c-wpp" placeholder="(11) 9 XXXX-XXXX"></div></div><div class="fl"><label>Contexto / o que costuma pedir</label><textarea class="fi" id="c-ctx" placeholder="Ex: Compra toda semana..."></textarea></div><div class="fg"><div class="fl"><label>Frequência</label><select class="fi fs" id="c-freq"><option>Selecione...</option><option>Todo dia</option><option>Semanal</option><option>Quinzenal</option><option>Mensal</option></select></div><div class="fl"><label>Aniversário</label><input type="date" class="fi" id="c-aniv"></div></div><div class="mo-ft"><button class="btn btn-g" onclick="closeModal('modal-cliente')">Cancelar</button><button class="btn btn-p" onclick="salvarCliente()">Salvar</button></div></div></div>
 
+<div class="mo" id="modal-rec-code"><div class="mo-box" style="max-width:420px"><div class="mo-hd"><div class="mo-tt">🔑 Código de recuperação</div><button class="mo-cl" onclick="closeModal('modal-rec-code')">×</button></div>
+  <div style="font-size:13px;color:var(--g2);margin-bottom:10px">Guarde este código <b>fora do celular</b> (foto, papel, anotações). Ele é a <b>única</b> forma de recuperar seu backup na nuvem se você esquecer a senha — nem nós conseguimos sem ele.</div>
+  <div id="rec-code-val" style="font-family:monospace;font-size:18px;font-weight:700;letter-spacing:1px;text-align:center;background:var(--vc);color:var(--ve);border-radius:10px;padding:14px;user-select:all;word-break:break-all">····</div>
+  <div class="mo-ft"><button class="btn btn-g" onclick="(navigator.clipboard&&navigator.clipboard.writeText(document.getElementById('rec-code-val').textContent),showToast('Código copiado.'))">Copiar</button><button class="btn btn-p" onclick="closeModal('modal-rec-code')">Guardei o código</button></div></div></div>
+
+<div class="mo" id="modal-recuperar"><div class="mo-box" style="max-width:420px"><div class="mo-hd"><div class="mo-tt">🔓 Recuperar conta</div><button class="mo-cl" onclick="closeModal('modal-recuperar')">×</button></div>
+  <div style="font-size:12px;color:var(--g2);margin-bottom:10px">Use seu <b>código de recuperação</b> (gerado ao criar a conta) para redefinir a senha e restaurar o backup da nuvem.</div>
+  <div class="fl"><label>WhatsApp (login)</label><input class="fi" id="rec-fone" placeholder="(11) 99999-9999"></div>
+  <div class="fl"><label>Código de recuperação</label><input class="fi" id="rec-code" placeholder="XXXX-XXXX-XXXX-…" style="font-family:monospace"></div>
+  <div class="fl"><label>Nova senha (mín. 8)</label><input class="fi" type="password" id="rec-nova-senha"></div>
+  <div class="mo-ft"><button class="btn btn-g" onclick="closeModal('modal-recuperar')">Cancelar</button><button class="btn btn-p" onclick="recuperarConta()">Recuperar</button></div></div></div>
+
 <div class="mo" id="modal-wpp"><div class="mo-box" style="max-width:400px"><div class="mo-hd"><div class="mo-tt">💬 Mensagem sugerida</div><button class="mo-cl" onclick="closeModal('modal-wpp')">×</button></div><div id="wpp-sub" style="font-size:12px;color:var(--g2);margin-bottom:8px"></div><div class="wpp-bub" id="wpp-txt"></div><div style="font-size:12px;color:var(--g2);margin-bottom:13px">Personalize antes de enviar se quiser.</div><div class="mo-ft"><button class="btn btn-g" onclick="closeModal('modal-wpp')">Fechar</button><button class="btn btn-p" id="wpp-btn-enviar">💬 Abrir WhatsApp</button></div></div></div>
 
 <div class="mo" id="modal-transacao"><div class="mo-box" style="max-width:420px"><div class="mo-hd"><div class="mo-tt" id="tx-tipo-label">Nova transação</div><button class="mo-cl" onclick="closeModal('modal-transacao')">×</button></div><div class="fl"><label>Descrição</label><input type="text" class="fi" id="tx-desc" placeholder="Ex: Compra de farinha, Aluguel..."></div><div class="fg"><div class="fl"><label>Valor (R$)</label><input type="number" class="fi" id="tx-valor" placeholder="0.00" step="0.01" min="0"></div><div class="fl"><label>Data</label><input type="date" class="fi" id="tx-data"></div></div><div class="fg"><div class="fl"><label>Categoria</label><select class="fi fs" id="tx-cat"></select></div><div class="fl"><label>Status</label><select class="fi fs" id="tx-status"><option value="pago">Pago / Recebido</option><option value="pendente">Pendente</option></select></div></div><div class="fl"><label>Observação (opcional)</label><input type="text" class="fi" id="tx-obs" placeholder="Número NF, fornecedor..."></div><div class="mo-ft"><button class="btn btn-g" onclick="closeModal('modal-transacao')">Cancelar</button><button class="btn btn-p" id="tx-salvar">Salvar</button></div></div></div>
@@ -1329,6 +1341,64 @@ async function _decryptBlob(keyB64, blob){
   const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:_b642ab(ivb)}, await _key(keyB64), _b642ab(ctb));
   return JSON.parse(new TextDecoder().decode(pt));
 }
+// ===== Recuperação por código (zero-knowledge): o código de recuperação embrulha a
+// chave AES. rec_wrap = chave cifrada com a chave derivada do código; rec_hash = PBKDF2
+// do código (domínio 'rh:' p/ não coincidir com a chave de embrulho) — autoriza o reset.
+// O servidor guarda só rec_wrap+rec_hash; nunca vê o código nem a chave. =====
+function _ab2hex(buf){ const b=new Uint8Array(buf); let s=''; for(let i=0;i<b.length;i++) s+=b[i].toString(16).padStart(2,'0'); return s; }
+function _normCode(s){ return (s||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+function _genRecoveryCode(){
+  const b=crypto.getRandomValues(new Uint8Array(16));
+  return [...b].map(x=>x.toString(16).padStart(2,'0')).join('').toUpperCase().match(/.{4}/g).join('-');
+}
+async function _recHashHex(code, saltHex){
+  const km=await crypto.subtle.importKey('raw', new TextEncoder().encode(_normCode(code)), 'PBKDF2', false, ['deriveBits']);
+  const salt=new TextEncoder().encode('rh:'+saltHex);
+  return _ab2hex(await crypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:120000,hash:'SHA-256'}, km, 256));
+}
+async function _setupRecovery(keyB64, saltHex){
+  const code=_genRecoveryCode();
+  const kek=await _deriveKeyB64(_normCode(code), saltHex);   // chave de embrulho
+  return {code, rec_wrap:await _encryptBlob(kek, {k:keyB64}), rec_hash:await _recHashHex(code, saltHex)};
+}
+async function _garantirRecovery(){   // gera + sobe o código se a conta ainda não tem
+  if(!N.conta) return;
+  try{
+    const s=await _setupRecovery(N.conta.keyB64, N.conta.salt);
+    await _api('/recovery','PUT',{rec_hash:s.rec_hash, rec_wrap:s.rec_wrap}, N.conta.token);
+    const el=document.getElementById('rec-code-val'); if(el) el.textContent=s.code;
+    openModal('modal-rec-code');
+  }catch(e){ /* não bloqueia o uso da conta se a config de recuperação falhar */ }
+}
+async function recuperarConta(){
+  const fone=_v('rec-fone'), code=_v('rec-code'), nova=_v('rec-nova-senha');
+  if(!fone||!code||!nova){ showToast('Preencha telefone, código e nova senha.','aviso'); return; }
+  if(nova.length<8){ showToast('A nova senha precisa de pelo menos 8 caracteres.','aviso'); return; }
+  try{
+    const info=await _api('/recovery/info?fone='+encodeURIComponent(fone.replace(/\D/g,'')),'GET',null,null);
+    const kek=await _deriveKeyB64(_normCode(code), info.salt);
+    let keyB64;
+    try{ keyB64=(await _decryptBlob(kek, info.rec_wrap)).k; }
+    catch(_){ showToast('Código de recuperação incorreto.','erro'); return; }
+    const dados = info.backup ? await _decryptBlob(keyB64, info.backup) : null;   // recupera os dados
+    const novaKey=await _deriveKeyB64(nova, info.salt);                            // chave da nova senha
+    const novoWrap=await _encryptBlob(kek, {k:novaKey});                           // reembrulha p/ o mesmo código
+    const rec_hash=await _recHashHex(code, info.salt);
+    const res=await _api('/recovery/reset','POST',{fone:fone.replace(/\D/g,''), rec_hash, new_senha:nova, new_rec_wrap:novoWrap});
+    N.conta={token:res.token, slug:res.slug, salt:res.salt, fone:fone.replace(/\D/g,''), keyB64:novaKey, publicado:false};
+    if(dados){
+      const blob=await _encryptBlob(novaKey, dados);            // re-cifra o backup com a nova senha
+      await _api('/backup','PUT', blob, res.token);
+      dados.conta=N.conta; dados._saved=new Date().toISOString();
+      const db=_getDB(); if(db) await db.kv.put({k:IDB_KEY, v:dados});
+      try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(dados)); }catch(_){}
+      closeModal('modal-recuperar'); showToast('Conta recuperada! Restaurando seus dados…'); setTimeout(()=>location.reload(),900);
+    } else {
+      salvarDados(); renderConta(); closeModal('modal-recuperar');
+      showToast('Senha redefinida. (Não havia backup na nuvem para restaurar.)');
+    }
+  }catch(e){ showToast('Falha na recuperação: '+(e.message||e),'erro'); }
+}
 async function _api(path, method, body, token){
   const h={}; if(token) h['x-token']=token;
   if(body && typeof body==='object'){ h['Content-Type']='application/json'; body=JSON.stringify(body); }
@@ -1345,6 +1415,7 @@ async function contaRegistrar(){
     const res=await _api('/register','POST',{fone,senha,slug});
     N.conta={token:res.token, slug:res.slug, salt:res.salt, fone:fone.replace(/\D/g,''), keyB64:await _deriveKeyB64(senha,res.salt), publicado:false};
     salvarDados(); renderConta(); showToast('Conta criada! Já dá pra publicar o cardápio e salvar na nuvem.');
+    await _garantirRecovery();   // gera e mostra o código de recuperação (uma vez)
   }catch(e){ showToast(e.message,'erro'); }
 }
 async function contaLogin(){
@@ -1353,8 +1424,10 @@ async function contaLogin(){
   try{
     const res=await _api('/login','POST',{fone,senha});
     N.conta={token:res.token, slug:res.slug, salt:res.salt, fone:fone.replace(/\D/g,''), keyB64:await _deriveKeyB64(senha,res.salt), publicado:false};
-    try{ const me=await _api('/me','GET',null,res.token); N.conta.publicado=!!me.publicado; }catch(_){}
+    let semRec=false;
+    try{ const me=await _api('/me','GET',null,res.token); N.conta.publicado=!!me.publicado; semRec=!me.temRecuperacao; }catch(_){}
     salvarDados(); renderConta(); showToast('Conectado à sua conta na nuvem.');
+    if(semRec) await _garantirRecovery();   // conta antiga ganha código de recuperação agora
   }catch(e){ showToast(e.message,'erro'); }
 }
 function contaSair(){ N.conta=null; salvarDados(); renderConta(); showToast('Saiu da conta na nuvem (dados locais intactos).'); }
@@ -1418,7 +1491,7 @@ function renderConta(){
     el.innerHTML=`
       <div class="fg"><div class="fl"><label>WhatsApp (login)</label><input class="fi" id="conta-fone" placeholder="(11) 99999-9999"></div><div class="fl"><label>Senha</label><input class="fi" type="password" id="conta-senha"></div></div>
       <div class="fl"><label>Endereço da loja <span style="color:var(--g2)">(só p/ criar)</span></label><input class="fi" id="conta-slug" placeholder="ex.: padaria-do-joao"></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="contaRegistrar()">Criar conta</button><button class="btn btn-g btn-sm" onclick="contaLogin()">Já tenho conta</button></div>`;
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn btn-p btn-sm" onclick="contaRegistrar()">Criar conta</button><button class="btn btn-g btn-sm" onclick="contaLogin()">Já tenho conta</button><a href="javascript:void(0)" onclick="openModal('modal-recuperar')" style="font-size:11px;color:var(--g2);margin-left:4px">Esqueci a senha</a></div>`;
   } else {
     const url=location.origin+'/loja/'+N.conta.slug+'/';
     el.innerHTML=`
