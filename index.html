@@ -93,6 +93,11 @@ body{font-family:var(--ff);background:var(--bg);color:var(--g1);-webkit-font-smo
 .tbl td{padding:9px 10px;border-bottom:.5px solid var(--g3);vertical-align:middle}
 .tbl tr:last-child td{border-bottom:none}
 .tbl tr:hover td{background:var(--g3)}
+/* Barra de navegação inferior (só no celular) — atalho pras telas quentes */
+.bottom-nav{display:none;position:fixed;left:0;right:0;bottom:0;z-index:40;background:var(--w);border-top:.5px solid var(--g4);padding:5px 4px;padding-bottom:max(5px,env(safe-area-inset-bottom));box-shadow:0 -2px 10px rgba(20,20,18,.05)}
+.bn-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:5px 2px;color:var(--g2);font-size:10px;font-weight:600;cursor:pointer;border-radius:8px;border:none;background:none;font-family:inherit}
+.bn-item svg{width:21px;height:21px}
+.bn-item.active{color:var(--v)}
 
 /* BADGES */
 .bd{display:inline-flex;align-items:center;font-size:11px;font-weight:500;padding:2px 8px;border-radius:20px}
@@ -277,9 +282,19 @@ textarea.fi{resize:vertical;min-height:68px}
   .carr{max-height:360px}
   .mo-box{width:96vw;max-width:96vw;padding:16px;max-height:88dvh}
   .tabs{overflow-x:auto;white-space:nowrap;flex-wrap:nowrap;-webkit-overflow-scrolling:touch}
-  /* tabelas largas rolam na horizontal em vez de quebrar a página */
-  table.tbl{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
-  .tbl th,.tbl td{padding:8px 9px;white-space:nowrap}
+  /* tabelas viram cartões (rótulo → valor) no celular — bem mais legível que rolar lateral */
+  table.tbl thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  table.tbl,table.tbl tbody,table.tbl tr,table.tbl td{display:block;width:100%}
+  table.tbl tr{border:.5px solid var(--g4);border-radius:10px;background:var(--w);margin:0 0 9px;padding:3px 2px;box-shadow:0 1px 2px rgba(20,20,18,.05)}
+  table.tbl tr:hover td{background:transparent}
+  table.tbl td{border:none;border-bottom:.5px solid var(--g3);padding:7px 12px;display:flex;justify-content:space-between;gap:14px;align-items:center;text-align:right;white-space:normal}
+  table.tbl tr td:last-child{border-bottom:none}
+  table.tbl td::before{content:attr(data-label);font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--g2);font-weight:700;text-align:left;flex-shrink:0}
+  table.tbl td[data-label=""]::before,table.tbl td:not([data-label])::before{display:none}
+  table.tbl td:empty{display:none}
+  /* bottom-nav visível + espaço pro conteúdo não ficar atrás dela */
+  .bottom-nav{display:flex}
+  .content{padding-bottom:calc(70px + env(safe-area-inset-bottom))}
   .fg,.fg3{grid-template-columns:1fr}
   /* >=16px evita o zoom automático do iOS ao focar campo */
   .fi,textarea.fi,select.fi{font-size:16px}
@@ -1587,6 +1602,7 @@ function go(id, el) {
   if(screen) screen.classList.add('active');
   if(el) el.classList.add('active');
   document.getElementById('tb-title').textContent = titulosMap[id]||id;
+  document.querySelectorAll('.bn-item[data-view]').forEach(b=>b.classList.toggle('active', b.dataset.view===id));
   // render da tela ativa
   const renders = {
     dashboard: renderDashboard, alertas: renderAlertas,
@@ -2504,6 +2520,29 @@ function updateNetChip(){
 window.addEventListener('online', updateNetChip);
 window.addEventListener('offline', updateNetChip);
 setTimeout(()=>{ if(!navigator.onLine) updateNetChip(); }, 600);
+
+// Bottom-nav (celular): atalho fixo pras telas quentes. Injetada no .main.
+function bnav(id, el){ if(typeof go==='function') go(id); document.querySelectorAll('.bn-item').forEach(b=>b.classList.remove('active')); if(el) el.classList.add('active'); }
+(function(){
+  const main=document.querySelector('.main'); if(!main||document.getElementById('bottom-nav')) return;
+  const itens=[['dashboard','Início'],['pdv','Vender'],['delivery','Delivery'],['clientes','Clientes']];
+  const menuIco=_ni('<path d="M3 12h18M3 6h18M3 18h18"/>');
+  const nav=document.createElement('nav'); nav.className='bottom-nav'; nav.id='bottom-nav';
+  nav.innerHTML=itens.map(([id,l])=>`<button class="bn-item" data-view="${id}" onclick="bnav('${id}',this)">${NAV_ICONS[id]||''}<span>${l}</span></button>`).join('')
+    +`<button class="bn-item" onclick="document.querySelector('.sb').classList.toggle('open')">${menuIco}<span>Menu</span></button>`;
+  main.appendChild(nav);
+})();
+
+// Tabelas .tbl viram cartões no celular: copia o cabeçalho pra data-label das células.
+// Observer (debounced) cobre re-renders por filtro sem editar cada função de render.
+function _tabelaLabels(){
+  document.querySelectorAll('#main-content table.tbl').forEach(t=>{
+    const ths=[...t.querySelectorAll('thead th')].map(th=>th.textContent.trim());
+    if(!ths.length) return;
+    t.querySelectorAll('tbody tr').forEach(tr=>{ [...tr.children].forEach((td,i)=>{ if(!td.hasAttribute('data-label')) td.setAttribute('data-label', ths[i]||''); }); });
+  });
+}
+(function(){ const mc=document.getElementById('main-content'); if(!mc) return; let t; new MutationObserver(()=>{ clearTimeout(t); t=setTimeout(_tabelaLabels,80); }).observe(mc,{childList:true,subtree:true}); })();
 
 // ── APLICAR PERFIL ─────────────────────────────────────────────
 function aplicarPerfil(perfil){
