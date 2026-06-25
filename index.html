@@ -1221,6 +1221,17 @@ function salvarDados() {
     if(window.Fuse) atualizarFuse();
   }
   catch(e){ console.warn('Erro ao salvar:', e); }
+  agendarAutoSync();
+}
+
+// Auto-sync da nuvem (debounced): após 12s sem novas mudanças, sobe um backup
+// silencioso. Só com conta + online + sem conflito pendente. A detecção de conflito
+// (409) no servidor evita sobrescrever o que outro aparelho subiu.
+let _autoSyncT=null, _autoSyncAvisado=false;
+function agendarAutoSync(){
+  if(!N.conta || !navigator.onLine || N.conta._conflito) return;
+  clearTimeout(_autoSyncT);
+  _autoSyncT=setTimeout(()=>{ backupNuvem({auto:true}); }, 12000);
 }
 
 // Normaliza/migra o blob carregado para o schema atual e o aplica em N.
@@ -1422,10 +1433,10 @@ async function recuperarConta(){
     const novoWrap=await _encryptBlob(kek, {k:novaKey});                           // reembrulha p/ o mesmo código
     const rec_hash=await _recHashHex(code, info.salt);
     const res=await _api('/recovery/reset','POST',{fone:fone.replace(/\D/g,''), rec_hash, new_senha:nova, new_rec_wrap:novoWrap});
-    N.conta={token:res.token, slug:res.slug, salt:res.salt, fone:fone.replace(/\D/g,''), keyB64:novaKey, publicado:false};
+    N.conta={token:res.token, slug:res.slug, salt:res.salt, fone:fone.replace(/\D/g,''), keyB64:novaKey, publicado:false, backupVer:0};
     if(dados){
       const blob=await _encryptBlob(novaKey, dados);            // re-cifra o backup com a nova senha
-      await _api('/backup','PUT', blob, res.token);
+      const up=await _api('/backup','PUT', blob, res.token); if(up&&up.ver!=null) N.conta.backupVer=up.ver;
       dados.conta=N.conta; dados._saved=new Date().toISOString();
       const db=_getDB(); if(db) await db.kv.put({k:IDB_KEY, v:dados});
       try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(dados)); }catch(_){}
@@ -1450,7 +1461,7 @@ async function contaRegistrar(){
   if(!fone||!senha||!slug){ showToast('Preencha telefone, senha e endereço.','aviso'); return; }
   try{
     const res=await _api('/register','POST',{fone,senha,slug});
-    N.conta={token:res.token, slug:res.slug, salt:res.salt, fone:fone.replace(/\D/g,''), keyB64:await _deriveKeyB64(senha,res.salt), publicado:false};
+    N.conta={token:res.token, slug:res.slug, salt:res.salt, fone:fone.replace(/\D/g,''), keyB64:await _deriveKeyB64(senha,res.salt), publicado:false, backupVer:0};
     salvarDados(); renderConta(); showToast('Conta criada! Já dá pra publicar o cardápio e salvar na nuvem.');
     await _garantirRecovery();   // gera e mostra o código de recuperação (uma vez)
   }catch(e){ showToast(e.message,'erro'); }
@@ -1462,32 +1473,53 @@ async function contaLogin(){
     const res=await _api('/login','POST',{fone,senha});
     N.conta={token:res.token, slug:res.slug, salt:res.salt, fone:fone.replace(/\D/g,''), keyB64:await _deriveKeyB64(senha,res.salt), publicado:false};
     let semRec=false;
-    try{ const me=await _api('/me','GET',null,res.token); N.conta.publicado=!!me.publicado; semRec=!me.temRecuperacao; }catch(_){}
+    try{ const me=await _api('/me','GET',null,res.token); N.conta.publicado=!!me.publicado; semRec=!me.temRecuperacao; N.conta.backupVer=me.backupVer||0; }catch(_){}
     salvarDados(); renderConta(); showToast('Conectado à sua conta na nuvem.');
     if(semRec) await _garantirRecovery();   // conta antiga ganha código de recuperação agora
   }catch(e){ showToast(e.message,'erro'); }
 }
 function contaSair(){ N.conta=null; salvarDados(); renderConta(); showToast('Saiu da conta na nuvem (dados locais intactos).'); }
-async function backupNuvem(){
-  if(!N.conta){ showToast('Entre na sua conta na nuvem primeiro.','aviso'); return; }
+async function backupNuvem(opts){
+  opts=opts||{};
+  if(!N.conta){ if(!opts.auto) showToast('Entre na sua conta na nuvem primeiro.','aviso'); return; }
+  if(!navigator.onLine){ if(!opts.auto) showToast('Sem internet agora — será sincronizado quando voltar.','aviso'); return; }
   try{
     const dados={...N}; delete dados.conta;
-    // Rede de segurança contra perda silenciosa: mostra quantos registros vão subir.
-    // Se este aparelho está quase vazio (instalação nova), o dono vê e cancela antes
-    // de sobrescrever o backup bom de outro celular.
-    const nItens=Object.values(dados).reduce((s,v)=>s+(Array.isArray(v)?v.length:0),0);
-    if(!confirm('Enviar backup com '+nItens+' registros para a nuvem?\n\nIsto substitui o backup anterior. Se este aparelho está quase vazio, NÃO confirme — você apagaria o backup bom de outro dispositivo.')) return;
+    if(!opts.auto){
+      // No backup MANUAL, mostra quantos registros vão subir (rede contra apagar o
+      // backup bom de outro aparelho com um app quase vazio). No auto, a versão (409) protege.
+      const nItens=Object.values(dados).reduce((s,v)=>s+(Array.isArray(v)?v.length:0),0);
+      if(!confirm('Enviar backup com '+nItens+' registros para a nuvem?\n\nIsto substitui o backup anterior. Se este aparelho está quase vazio, NÃO confirme — você apagaria o backup bom de outro dispositivo.')) return;
+    }
     const blob=await _encryptBlob(N.conta.keyB64, dados);
-    await _api('/backup','PUT', blob, N.conta.token);
-    marcarBackup(); showToast('☁️ Backup salvo na nuvem (cifrado).');
-  }catch(e){ showToast('Falha no backup na nuvem: '+e.message,'erro'); }
+    const h={'x-token':N.conta.token};
+    if(N.conta.backupVer!=null) h['x-base-ver']=String(N.conta.backupVer);
+    const r=await fetch('/api/backup',{method:'PUT',headers:h,body:blob});
+    if(r.status===409){
+      N.conta._conflito=true; salvarDados();
+      // a nuvem mudou em outro aparelho — não sobrescreve
+      if(opts.auto){ showToast('☁️ A nuvem mudou em outro aparelho. Vá em Configurações → Restaurar da nuvem.','aviso'); }
+      else if(confirm('A nuvem tem uma versão mais nova (outro aparelho).\n\nBaixar a versão da nuvem agora? Suas mudanças locais ainda não enviadas serão substituídas.')){ restaurarNuvem(); }
+      return;
+    }
+    if(!r.ok){ throw new Error('erro '+r.status); }
+    const j=await r.json(); if(j&&j.ver!=null) N.conta.backupVer=j.ver;
+    N.conta._conflito=false;
+    marcarBackup();
+    if(opts.auto){ if(!_autoSyncAvisado){ _autoSyncAvisado=true; showToast('☁️ Sincronizado com a nuvem (automático).'); } }
+    else showToast('☁️ Backup salvo na nuvem (cifrado).');
+  }catch(e){ if(!opts.auto) showToast('Falha no backup na nuvem: '+e.message,'erro'); else console.warn('auto-sync falhou:',e.message); }
 }
 async function restaurarNuvem(){
   if(!N.conta){ showToast('Entre na sua conta na nuvem primeiro.','aviso'); return; }
   if(!confirm('Restaurar da nuvem SUBSTITUI os dados deste aparelho. Continuar?')) return;
   try{
-    const blob=await _api('/backup','GET', null, N.conta.token);
+    const r=await fetch('/api/backup',{headers:{'x-token':N.conta.token}});
+    if(!r.ok) throw new Error('erro '+r.status);
+    const blob=await r.text();
+    const ver=parseInt(r.headers.get('X-Backup-Ver')||'0',10);
     const dados=await _decryptBlob(N.conta.keyB64, blob);
+    N.conta.backupVer=ver; N.conta._conflito=false;
     dados.conta=N.conta; dados._saved=new Date().toISOString();
     const db=_getDB(); if(db) await db.kv.put({k:IDB_KEY, v:dados});
     try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(dados)); }catch(_){}
