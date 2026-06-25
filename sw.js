@@ -4,7 +4,7 @@
    - libs e ícones locais: cache-first (imutáveis).
    - Origens externas (tiles do mapa, nominatim, wa.me): passam direto, sem cache.
    Suba o número da versão (CACHE) ao publicar mudanças nas libs/shell. */
-const CACHE = 'ci-shell-v3';
+const CACHE = 'ci-shell-v4';
 const SHELL = [
   './',
   './index.html',
@@ -16,7 +16,12 @@ const SHELL = [
   './libs/fuse.min.js',
   './libs/leaflet.min.css',
   './libs/leaflet.min.js',
-  './libs/jspdf.umd.min.js'
+  './libs/jspdf.umd.min.js',
+  './libs/jakarta-400.woff2',
+  './libs/jakarta-500.woff2',
+  './libs/jakarta-600.woff2',
+  './libs/jakarta-700.woff2',
+  './libs/jakarta-800.woff2'
 ];
 
 self.addEventListener('install', e => {
