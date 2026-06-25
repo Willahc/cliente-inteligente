@@ -128,7 +128,9 @@ body{font-family:var(--ff);background:var(--bg);color:var(--g1);-webkit-font-smo
 textarea.fi{resize:vertical;min-height:68px}
 
 /* MODAL */
-.mo{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:100;align-items:center;justify-content:center}
+/* z-index acima do Leaflet (panes/controles vão até 1000): senão o mapa de entregas
+   atravessa o modal de pedido na tela de Delivery. */
+.mo{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:2000;align-items:center;justify-content:center}
 .mo.open{display:flex}
 .mo-box{background:var(--w);border-radius:14px;padding:22px;width:480px;max-width:96vw;max-height:90vh;overflow-y:auto}
 .mo-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
@@ -197,7 +199,7 @@ textarea.fi{resize:vertical;min-height:68px}
 .pred-fill{height:100%;border-radius:3px}
 
 /* TOAST */
-.toast{position:fixed;bottom:22px;right:22px;background:var(--g1);color:#fff;padding:11px 17px;border-radius:10px;font-size:13px;z-index:999;display:none;align-items:center;gap:8px;max-width:340px}
+.toast{position:fixed;bottom:22px;right:22px;background:var(--g1);color:#fff;padding:11px 17px;border-radius:10px;font-size:13px;z-index:2100;display:none;align-items:center;gap:8px;max-width:340px}
 .toast.show{display:flex}
 
 /* WPP */
