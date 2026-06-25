@@ -985,6 +985,12 @@ textarea.fi{resize:vertical;min-height:68px}
   <div class="fl"><label>Nova senha (mín. 8)</label><input class="fi" type="password" id="rec-nova-senha"></div>
   <div class="mo-ft"><button class="btn btn-g" onclick="closeModal('modal-recuperar')">Cancelar</button><button class="btn btn-p" onclick="recuperarConta()">Recuperar</button></div></div></div>
 
+<div class="mo" id="modal-unlock"><div class="mo-box" style="max-width:380px"><div class="mo-hd"><div class="mo-tt">🔒 Desbloquear sincronização</div><button class="mo-cl" onclick="cancelarDesbloqueio()">×</button></div>
+  <div style="font-size:12px;color:var(--g2);margin-bottom:10px">Por segurança, a chave do seu backup <b>não fica salva no aparelho</b>. Digite sua senha para usar a nuvem nesta sessão.</div>
+  <div class="fl"><label>Senha</label><input class="fi" type="password" id="unlock-senha" onkeydown="if(event.key==='Enter')desbloquear()"></div>
+  <div id="unlock-err" class="sem" style="display:none;color:var(--c);text-align:left;padding:4px 0"></div>
+  <div class="mo-ft"><button class="btn btn-g" onclick="cancelarDesbloqueio()">Cancelar</button><button class="btn btn-p" onclick="desbloquear()">Desbloquear</button></div></div></div>
+
 <div class="mo" id="modal-wpp"><div class="mo-box" style="max-width:400px"><div class="mo-hd"><div class="mo-tt">💬 Mensagem sugerida</div><button class="mo-cl" onclick="closeModal('modal-wpp')">×</button></div><div id="wpp-sub" style="font-size:12px;color:var(--g2);margin-bottom:8px"></div><div class="wpp-bub" id="wpp-txt"></div><div style="font-size:12px;color:var(--g2);margin-bottom:13px">Personalize antes de enviar se quiser.</div><div class="mo-ft"><button class="btn btn-g" onclick="closeModal('modal-wpp')">Fechar</button><button class="btn btn-p" id="wpp-btn-enviar">💬 Abrir WhatsApp</button></div></div></div>
 
 <div class="mo" id="modal-transacao"><div class="mo-box" style="max-width:420px"><div class="mo-hd"><div class="mo-tt" id="tx-tipo-label">Nova transação</div><button class="mo-cl" onclick="closeModal('modal-transacao')">×</button></div><div class="fl"><label>Descrição</label><input type="text" class="fi" id="tx-desc" placeholder="Ex: Compra de farinha, Aluguel..."></div><div class="fg"><div class="fl"><label>Valor (R$)</label><input type="number" class="fi" id="tx-valor" inputmode="decimal" placeholder="0.00" step="0.01" min="0"></div><div class="fl"><label>Data</label><input type="date" class="fi" id="tx-data"></div></div><div class="fg"><div class="fl"><label>Categoria</label><select class="fi fs" id="tx-cat"></select></div><div class="fl"><label>Status</label><select class="fi fs" id="tx-status"><option value="pago">Pago / Recebido</option><option value="pendente">Pendente</option></select></div></div><div class="fl"><label>Observação (opcional)</label><input type="text" class="fi" id="tx-obs" placeholder="Número NF, fornecedor..."></div><div class="mo-ft"><button class="btn btn-g" onclick="closeModal('modal-transacao')">Cancelar</button><button class="btn btn-p" id="tx-salvar">Salvar</button></div></div></div>
@@ -1209,10 +1215,15 @@ function _getDB(){
 function _persistir(){
   N._v = SCHEMA_VERSION;
   N._saved = new Date().toISOString();
+  // A chave de cripto (keyB64) NUNCA é persistida — fica só em MEMÓRIA (zero-knowledge
+  // no device: nem XSS/malware leem a chave do storage). É re-derivada da senha ao usar
+  // a nuvem (desbloqueio). O token de sessão segue salvo p/ manter o login.
+  let snap = N;
+  if(N.conta && N.conta.keyB64){ const {keyB64, ...semChave} = N.conta; snap = {...N, conta: semChave}; }
   const db = _getDB();
-  if(db){ db.kv.put({ k: IDB_KEY, v: N }).catch(()=>{}); }   // Dexie faz structured-clone do N
+  if(db){ db.kv.put({ k: IDB_KEY, v: snap }).catch(()=>{}); }   // Dexie faz structured-clone
   // espelho síncrono best-effort (ignora estouro de cota — o IndexedDB cobre)
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(N)); } catch(e){}
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snap)); } catch(e){}
 }
 
 function salvarDados() {
@@ -1229,10 +1240,33 @@ function salvarDados() {
 // (409) no servidor evita sobrescrever o que outro aparelho subiu.
 let _autoSyncT=null, _autoSyncAvisado=false;
 function agendarAutoSync(){
-  if(!N.conta || !navigator.onLine || N.conta._conflito) return;
+  if(!N.conta || !N.conta.keyB64 || !navigator.onLine || N.conta._conflito) return;
   clearTimeout(_autoSyncT);
   _autoSyncT=setTimeout(()=>{ backupNuvem({auto:true}); }, 12000);
 }
+
+// Desbloqueio: a chave de cripto não fica salva; após recarregar o app, re-derivamos
+// da senha (verificada via login) p/ usar a nuvem. Em auto-sync, se bloqueado, pula.
+let _unlockResolve=null;
+function _garantirChave(opts){
+  opts=opts||{};
+  if(N.conta && N.conta.keyB64) return Promise.resolve(true);
+  if(!N.conta || opts.silent) return Promise.resolve(false);
+  return new Promise(res=>{ _unlockResolve=res; const e=document.getElementById('unlock-err'); if(e)e.style.display='none'; const i=document.getElementById('unlock-senha'); if(i){i.value='';} showModal('modal-unlock'); setTimeout(()=>{i&&i.focus();},120); });
+}
+async function desbloquear(){
+  const senha=_v('unlock-senha'); if(!senha) return;
+  try{
+    const res=await _api('/login','POST',{fone:N.conta.fone, senha});
+    N.conta.keyB64=await _deriveKeyB64(senha,res.salt);
+    N.conta.token=res.token; N.conta.salt=res.salt; N.conta._conflito=false;
+    try{ const me=await _api('/me','GET',null,res.token); N.conta.backupVer=me.backupVer||0; }catch(_){}
+    salvarDados(); renderConta(); closeModal('modal-unlock');
+    if(_unlockResolve){ _unlockResolve(true); _unlockResolve=null; }
+    showToast('🔓 Sincronização desbloqueada.');
+  }catch(e){ const el=document.getElementById('unlock-err'); if(el){ el.textContent='Senha incorreta. Tente de novo.'; el.style.display='block'; } }
+}
+function cancelarDesbloqueio(){ closeModal('modal-unlock'); if(_unlockResolve){ _unlockResolve(false); _unlockResolve=null; } }
 
 // Normaliza/migra o blob carregado para o schema atual e o aplica em N.
 function _aplicarDados(dados){
@@ -1415,7 +1449,7 @@ async function _garantirRecovery(){   // gera + sobe o código se a conta ainda 
     const s=await _setupRecovery(N.conta.keyB64, N.conta.salt);
     await _api('/recovery','PUT',{rec_hash:s.rec_hash, rec_wrap:s.rec_wrap}, N.conta.token);
     const el=document.getElementById('rec-code-val'); if(el) el.textContent=s.code;
-    openModal('modal-rec-code');
+    showModal('modal-rec-code');
   }catch(e){ /* não bloqueia o uso da conta se a config de recuperação falhar */ }
 }
 async function recuperarConta(){
@@ -1478,11 +1512,12 @@ async function contaLogin(){
     if(semRec) await _garantirRecovery();   // conta antiga ganha código de recuperação agora
   }catch(e){ showToast(e.message,'erro'); }
 }
-function contaSair(){ N.conta=null; salvarDados(); renderConta(); showToast('Saiu da conta na nuvem (dados locais intactos).'); }
+function contaSair(){ const t=N.conta&&N.conta.token; if(t){ fetch('/api/logout',{method:'POST',headers:{'x-token':t}}).catch(()=>{}); } N.conta=null; salvarDados(); renderConta(); showToast('Saiu da conta na nuvem (dados locais intactos).'); }
 async function backupNuvem(opts){
   opts=opts||{};
   if(!N.conta){ if(!opts.auto) showToast('Entre na sua conta na nuvem primeiro.','aviso'); return; }
   if(!navigator.onLine){ if(!opts.auto) showToast('Sem internet agora — será sincronizado quando voltar.','aviso'); return; }
+  if(!await _garantirChave({silent:opts.auto})){ return; }   // bloqueado: pede senha (manual) ou pula (auto)
   try{
     const dados={...N}; delete dados.conta;
     if(!opts.auto){
@@ -1512,6 +1547,7 @@ async function backupNuvem(opts){
 }
 async function restaurarNuvem(){
   if(!N.conta){ showToast('Entre na sua conta na nuvem primeiro.','aviso'); return; }
+  if(!await _garantirChave()) return;   // precisa da chave p/ decifrar o backup
   if(!confirm('Restaurar da nuvem SUBSTITUI os dados deste aparelho. Continuar?')) return;
   try{
     const r=await fetch('/api/backup',{headers:{'x-token':N.conta.token}});
@@ -1592,11 +1628,13 @@ function renderConta(){
     el.innerHTML=`
       <div class="fg"><div class="fl"><label>WhatsApp (login)</label><input class="fi" id="conta-fone" placeholder="(11) 99999-9999"></div><div class="fl"><label>Senha</label><input class="fi" type="password" id="conta-senha"></div></div>
       <div class="fl"><label>Endereço da loja <span style="color:var(--g2)">(só p/ criar)</span></label><input class="fi" id="conta-slug" placeholder="ex.: padaria-do-joao"></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn btn-p btn-sm" onclick="contaRegistrar()">Criar conta</button><button class="btn btn-g btn-sm" onclick="contaLogin()">Já tenho conta</button><a href="javascript:void(0)" onclick="openModal('modal-recuperar')" style="font-size:11px;color:var(--g2);margin-left:4px">Esqueci a senha</a></div>`;
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn btn-p btn-sm" onclick="contaRegistrar()">Criar conta</button><button class="btn btn-g btn-sm" onclick="contaLogin()">Já tenho conta</button><a href="javascript:void(0)" onclick="showModal('modal-recuperar')" style="font-size:11px;color:var(--g2);margin-left:4px">Esqueci a senha</a></div>`;
   } else {
     const url=location.origin+'/loja/'+N.conta.slug+'/';
+    const bloqueado = !N.conta.keyB64;
     el.innerHTML=`
       <div style="font-size:12px;margin-bottom:9px">✅ Conectado · loja <b>${esc(N.conta.slug)}</b></div>
+      ${bloqueado?`<div style="font-size:11px;color:#633806;background:var(--ac);border-radius:8px;padding:8px 11px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:8px"><span>🔒 Sincronização bloqueada (a chave não fica salva no aparelho).</span><button class="btn btn-p btn-sm" style="flex-shrink:0" onclick="_garantirChave()">Desbloquear</button></div>`:''}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
         <button class="btn btn-p btn-sm" onclick="publicarCardapio()">🌐 Publicar cardápio</button>
         <button class="btn btn-g btn-sm" onclick="backupNuvem()">☁️ Backup na nuvem</button>
