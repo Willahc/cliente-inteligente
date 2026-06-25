@@ -52,7 +52,14 @@ raiz do site para ter escopo `/`. As libs em `libs/` podem ter cache longo
 
 Os dados vivem no navegador do dispositivo. Em **Configurações → Cópia de
 segurança**, use **Baixar backup** para exportar um `.json` e **Restaurar** para
-reimportar (em outro aparelho ou após limpar o navegador). Não há backup na nuvem.
+reimportar (em outro aparelho ou após limpar o navegador).
+
+**Backup na nuvem (Fase 2, opcional):** criando uma conta (telefone + senha), o app
+sobe um backup **cifrado no cliente** (AES-GCM via WebCrypto) para o `ci-api` — o
+servidor guarda apenas bytes opacos (**zero-knowledge**: a chave deriva da senha e
+nunca sai do dispositivo). ⚠️ Por isso, **esquecer a senha torna o backup na nuvem
+irrecuperável**. O upload guarda 1 nível de histórico (`.prev`) no servidor como
+rede de segurança contra sobrescrita acidental.
 
 ## Licença
 
