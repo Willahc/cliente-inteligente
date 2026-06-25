@@ -1497,26 +1497,54 @@ async function restaurarNuvem(){
 function _gerarCardapioHTML(){
   const loja=N.nome||'Minha loja';
   const num=(N.wpp||'').replace(/\D/g,''); const num55=num?(num.startsWith('55')?num:'55'+num):'';
-  const wa=num55?`https://wa.me/${num55}?text=${encodeURIComponent('Olá! Quero fazer um pedido na '+loja+':')}`:'';
-  const prods=(N.produtos||[]).filter(p=>p.nome);
-  const itens=prods.map(p=>`<div class="i"><span>${esc(p.nome)}</span><b>R$ ${esc(String(p.preco||'').replace('.',','))}</b></div>`).join('')||'<div class="i"><span>Cardápio em breve</span></div>';
-  const botao=wa?`<a class="wa" href="${esc(wa)}">📲 Fazer pedido no WhatsApp</a>`:'<div class="sem">Configure seu WhatsApp no app para receber pedidos.</div>';
+  const prods=(N.produtos||[]).filter(p=>p.nome).map(p=>({nome:p.nome, cat:(p.categoria||'').trim(), preco:parseFloat(String(p.preco||'').replace(',','.'))||0}));
+  const cats=[...new Set(prods.map(p=>p.cat))].filter(Boolean);
+  const usarCats=cats.length>1;
+  const preco=v=>v?('R$ '+v.toFixed(2).replace('.',',')):'';
+  const linha=p=>`<div class="prod" data-nome="${esc(p.nome)}" data-preco="${p.preco}">
+      <div class="pi"><div class="pn">${esc(p.nome)}</div><div class="pp">${preco(p.preco)}</div></div>
+      <div class="stp"><button class="sb" data-step="-1" data-nome="${esc(p.nome)}" aria-label="remover">−</button><span class="qd">0</span><button class="sb add" data-step="1" data-nome="${esc(p.nome)}" aria-label="adicionar">+</button></div>
+    </div>`;
+  let corpo;
+  if(!prods.length){ corpo='<div class="sem">Cardápio em breve.</div>'; }
+  else if(usarCats){
+    const ordem=[...cats, ...(prods.some(p=>!p.cat)?['Outros']:[])];
+    corpo=ordem.map(c=>{ const l=prods.filter(p=>(p.cat||'Outros')===c); return l.length?`<div class="grp">${esc(c)}</div><div class="card">${l.map(linha).join('')}</div>`:''; }).join('');
+  } else { corpo=`<div class="card">${prods.map(linha).join('')}</div>`; }
+  const cartSvg='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>';
+  const cartBar = (num55 && prods.length)
+    ? `<div id="cartbar"><div class="cinfo"><b id="cart-n">0</b> itens · <b id="cart-tot">R$ 0,00</b></div><button id="cart-go">${cartSvg} Fazer pedido no WhatsApp</button></div>`
+    : (prods.length ? '<div class="sem">O lojista ainda não configurou o WhatsApp para receber pedidos.</div>' : '');
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(loja)}</title><style>
 @font-face{font-family:'Jakarta';font-weight:400;font-display:swap;src:url('/libs/jakarta-400.woff2') format('woff2')}
 @font-face{font-family:'Jakarta';font-weight:600;font-display:swap;src:url('/libs/jakarta-600.woff2') format('woff2')}
 @font-face{font-family:'Jakarta';font-weight:700;font-display:swap;src:url('/libs/jakarta-700.woff2') format('woff2')}
 @font-face{font-family:'Jakarta';font-weight:800;font-display:swap;src:url('/libs/jakarta-800.woff2') format('woff2')}
-*{box-sizing:border-box}body{margin:0;font-family:'Jakarta',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f1f5f9;color:#0f172a}
+*{box-sizing:border-box}body{margin:0;font-family:'Jakarta',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f1f5f9;color:#0f172a;padding-bottom:88px}
 .wrap{max-width:520px;margin:0 auto;padding:18px}
 .hd{text-align:center;padding:22px 14px;background:#1D9E75;color:#fff;border-radius:0 0 16px 16px}
 .hd h1{margin:0;font-size:22px}.hd p{margin:4px 0 0;font-size:13px;opacity:.9}
-.card{background:#fff;border-radius:12px;padding:6px 14px;margin:14px 0;box-shadow:0 1px 3px rgba(0,0,0,.06)}
-.i{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid #eef2f6;font-size:15px}.i:last-child{border-bottom:none}.i b{color:#1D9E75}
-.wa{display:block;text-align:center;background:#22c55e;color:#fff;text-decoration:none;font-weight:700;padding:14px;border-radius:12px;font-size:16px;margin:14px 0}
-.sem{text-align:center;color:#64748b;font-size:13px;padding:12px}
+.grp{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#64748b;margin:18px 4px 6px}
+.card{background:#fff;border-radius:12px;padding:4px 14px;margin:10px 0;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.prod{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #eef2f6}.prod:last-child{border-bottom:none}
+.prod.on{background:#f0fdf8;margin:0 -14px;padding:11px 14px;border-bottom:1px solid #eef2f6}
+.pn{font-size:15px;font-weight:600}.pp{font-size:13px;color:#1D9E75;font-weight:700;margin-top:2px}
+.stp{display:flex;align-items:center;gap:9px;flex-shrink:0}
+.sb{width:30px;height:30px;border-radius:50%;border:1.5px solid #d6e0db;background:#fff;color:#0f172a;font-size:18px;font-weight:700;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.sb.add{background:#1D9E75;border-color:#1D9E75;color:#fff}
+.qd{min-width:16px;text-align:center;font-weight:700;font-size:15px}
+.sem{text-align:center;color:#64748b;font-size:13px;padding:16px}
 .ft{text-align:center;color:#94a3b8;font-size:11px;padding:14px}
-</style></head><body><div class="hd"><h1>${esc(loja)}</h1><p>Cardápio online</p></div>
-<div class="wrap"><div class="card">${itens}</div>${botao}<div class="ft">Feito com Cliente Inteligente</div></div></body></html>`;
+#cartbar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #e6eaef;box-shadow:0 -3px 14px rgba(0,0,0,.08);padding:11px 16px calc(11px + env(safe-area-inset-bottom));display:none;align-items:center;gap:12px;max-width:520px;margin:0 auto}
+#cartbar.show{display:flex}
+.cinfo{font-size:13px;color:#334155;white-space:nowrap}.cinfo b{color:#0f172a}
+#cart-go{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:7px;background:#22c55e;color:#fff;border:none;border-radius:12px;padding:13px;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer}
+</style></head><body data-loja="${esc(loja)}" data-wpp="${num55}">
+<div class="hd"><h1>${esc(loja)}</h1><p>Cardápio online</p></div>
+<div class="wrap">${corpo}<div class="ft">Feito com Cliente Inteligente</div></div>
+${cartBar}
+<script src="/libs/cardapio.js"><\/script>
+</body></html>`;
 }
 async function publicarCardapio(){
   if(!N.conta){ showToast('Entre na conta na nuvem primeiro.','aviso'); return; }
